@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart QR File Share</title>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f9f9f9, #e9eef5);
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background: white;
+            padding: 40px 50px;
+            border-radius: 20px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 450px;
+            width: 90%;
+        }
+
+        h1 {
+            color: #2b6cb0;
+            margin-bottom: 15px;
+        }
+
+        p {
+            color: #555;
+            margin-bottom: 30px;
+        }
+
+        .upload-box {
+            border: 2px dashed #2b6cb0;
+            padding: 30px;
+            border-radius: 15px;
+            background: #f1f5fb;
+            cursor: pointer;
+            transition: 0.3s ease;
+        }
+
+        .upload-box:hover {
+            background: #e3ecfa;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            background: #2b6cb0;
+            color: white;
+            padding: 12px 25px;
+            margin-top: 25px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .btn:hover {
+            background: #1e4e8c;
+        }
+
+        footer {
+            margin-top: 40px;
+            color: #888;
+            font-size: 13px;
+        }
+
+        .file-name {
+            margin-top: 15px;
+            color: #444;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>📂 Smart QR File Share</h1>
+        <p>Upload any file and get an instant shareable link + QR code.</p>
+
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <label for="file" class="upload-box" id="drop-area">
+                <strong>📤 Click to browse</strong> or drag a file here
+                <input type="file" name="file" id="file" required>
+            </label>
+            <div id="file-name" class="file-name"></div>
+
+            <button type="submit" class="btn">🚀 Upload & Generate QR</button>
+        </form>
+    </div>
+
+    <footer>🌐 Smart QR File Share | Powered by Flask + Cloudflare</footer>
+
+    <script>
+        const fileInput = document.getElementById('file');
+        const fileNameDisplay = document.getElementById('file-name');
+        const dropArea = document.getElementById('drop-area');
+
+        // Update file name on selection
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileNameDisplay.textContent = `Selected: ${file.name}`;
+            }
+        });
+
+        // Optional drag-and-drop styling
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropArea.style.background = '#e3ecfa';
+        });
+        dropArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropArea.style.background = '#f1f5fb';
+        });
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.style.background = '#f1f5fb';
+            const file = e.dataTransfer.files[0];
+            fileInput.files = e.dataTransfer.files;
+            if (file) {
+                fileNameDisplay.textContent = `Selected: ${file.name}`;
+            }
+        });
+    </script>
+
+</body>
+</html>
