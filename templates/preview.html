@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Preview: {{ filename }}</title>
+    <style>
+        body {
+            font-family: Arial;
+            text-align: center;
+            background: #f9fafc;
+            padding: 40px;
+        }
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            display: inline-block;
+            width: 80%;
+            max-width: 600px;
+        }
+        img, video, iframe {
+            width: 100%;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+        a {
+            text-decoration: none;
+            color: white;
+            background: #2563eb;
+            padding: 10px 25px;
+            border-radius: 8px;
+            display: inline-block;
+            margin-top: 15px;
+        }
+        a:hover {
+            background: #1d4ed8;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Preview: {{ filename }}</h2>
+        {% if filename.endswith(('.png', '.jpg', '.jpeg', '.gif')) %}
+            <img src="/uploads/{{ filename }}" alt="{{ filename }}">
+        {% elif filename.endswith(('.mp4', '.webm')) %}
+            <video controls>
+                <source src="/uploads/{{ filename }}" type="video/mp4">
+            </video>
+        {% elif filename.endswith('.pdf') %}
+            <iframe src="/uploads/{{ filename }}" height="500px"></iframe>
+        {% else %}
+            <p>Preview not available for this file type.</p>
+        {% endif %}
+        <br>
+        <a href="/uploads/{{ filename }}" download>⬇️ Download File</a>
+        <a href="/">🏠 Home</a>
+    </div>
+</body>
+</html>

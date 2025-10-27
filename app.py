@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, render_template, request, send_from_directory, redirect, url_for
 import os, qrcode, threading, time
 from werkzeug.utils import secure_filename
 
@@ -14,14 +14,18 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(QR_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
+
 # ==========================
-# FILE UPLOAD & QR GENERATION
+# HOME PAGE
 # ==========================
 @app.route("/")
 def index():
     return render_template("index.html")
 
 
+# ==========================
+# FILE UPLOAD + QR GENERATION
+# ==========================
 @app.route("/upload", methods=["POST"])
 def upload_file():
     if "file" not in request.files:
@@ -35,13 +39,13 @@ def upload_file():
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
     file.save(filepath)
 
-    # Use your Render public domain instead of Cloudflare
+    # Your public Render domain
     public_base = "https://smartqr-pe0z.onrender.com"
     file_url = f"{public_base}/view/{filename}"
 
-    # Generate QR code
+    # Generate QR code for the file link
     qr_img = qrcode.make(file_url)
-    qr_filename = f"{filename}.png"
+    qr_filename = f"{filename}_qr.png"
     qr_path = os.path.join(QR_FOLDER, qr_filename)
     qr_img.save(qr_path)
 
@@ -52,9 +56,22 @@ def upload_file():
         public_link=file_url
     )
 
+
+# ==========================
+# VIEW FILE PAGE
+# ==========================
 @app.route("/view/<filename>")
 def view_file(filename):
+    return render_template("preview.html", filename=filename)
+
+
+# ==========================
+# FILE DOWNLOAD ROUTE
+# ==========================
+@app.route("/uploads/<filename>")
+def download_file(filename):
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+
 
 # ==========================
 # AUTO CLEANUP (optional)
@@ -72,14 +89,16 @@ def cleanup_worker(upload_folder, qr_folder, retention_seconds, interval):
                     pass
         time.sleep(interval)
 
+
 threading.Thread(
     target=cleanup_worker,
     args=(UPLOAD_FOLDER, QR_FOLDER, 3600, 600),
     daemon=True
 ).start()
 
+
 # ==========================
-# MAIN
+# MAIN APP
 # ==========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

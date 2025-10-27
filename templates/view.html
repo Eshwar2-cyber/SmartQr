@@ -1,77 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Smart QR - View File</title>
-  <style>
-    body {
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background: #f4f6fb;
-      color: #333;
-      text-align: center;
-      margin: 0;
-      padding: 40px;
-    }
-    .container {
-      background: white;
-      border-radius: 20px;
-      padding: 30px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-      max-width: 600px;
-      margin: auto;
-    }
-    h2 {
-      color: #2b6cb0;
-      margin-bottom: 20px;
-    }
-    .preview {
-      margin: 20px 0;
-      border: 2px dashed #ccc;
-      padding: 20px;
-      border-radius: 10px;
-      background: #fafafa;
-    }
-    img, video, iframe {
-      max-width: 100%;
-      border-radius: 10px;
-    }
-    .btn {
-      display: inline-block;
-      background: #2b6cb0;
-      color: white;
-      padding: 10px 20px;
-      margin: 10px;
-      border-radius: 8px;
-      text-decoration: none;
-      transition: 0.3s;
-    }
-    .btn:hover {
-      background: #1e4e8c;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <title>QR Generated</title>
+    <style>
+        body {
+            font-family: Arial;
+            text-align: center;
+            background: #f9fafc;
+            padding: 50px;
+        }
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            display: inline-block;
+        }
+        img {
+            width: 250px;
+            margin-top: 20px;
+        }
+        a {
+            text-decoration: none;
+            color: white;
+            background: #2563eb;
+            padding: 10px 25px;
+            border-radius: 8px;
+            display: inline-block;
+            margin-top: 15px;
+        }
+        a:hover {
+            background: #1d4ed8;
+        }
+    </style>
 </head>
 <body>
-  <div class="container">
-    <h2>Preview: {{ filename }}</h2>
-    <div class="preview">
-      {% set ext = filename.split('.')[-1].lower() %}
-      {% if ext in ['png','jpg','jpeg','gif','webp'] %}
-        <img src="{{ url_for('view_file', filename=filename) }}" alt="Image Preview" />
-      {% elif ext in ['mp4','webm','ogg'] %}
-        <video controls>
-          <source src="{{ url_for('view_file', filename=filename) }}" type="video/{{ ext }}">
-          Your browser does not support the video tag.
-        </video>
-      {% elif ext == 'pdf' %}
-        <iframe src="{{ url_for('view_file', filename=filename) }}" width="100%" height="500px"></iframe>
-      {% else %}
-        <p>Preview not available for this file type.</p>
-      {% endif %}
+    <div class="card">
+        <h2>✅ QR Code Generated!</h2>
+        <p>Scan the QR to access your file:</p>
+        <img src="/static/qrcodes/{{ qr_image }}" alt="QR Code">
+        <br>
+        <a href="{{ public_link }}">Open File Page</a><br><br>
+        <a href="/">🏠 Home</a>
     </div>
-
-    <a class="btn" href="{{ url_for('view_file', filename=filename) }}" download>⬇️ Download File</a>
-    <a class="btn" href="/">🏠 Home</a>
-  </div>
 </body>
 </html>
