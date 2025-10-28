@@ -2,59 +2,44 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Preview: {{ filename }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart QR File Share</title>
     <style>
         body {
-            font-family: Arial;
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #f9f9f9, #e9eef5);
             text-align: center;
-            background: #f9fafc;
+            padding-top: 100px;
+        }
+        .upload-box {
+            border: 2px dashed #2b6cb0;
             padding: 40px;
-        }
-        .card {
-            background: white;
             border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            background: #f1f5fb;
             display: inline-block;
-            width: 80%;
-            max-width: 600px;
         }
-        img, video, iframe {
-            width: 100%;
-            border-radius: 10px;
-            margin-top: 10px;
-        }
-        a {
-            text-decoration: none;
+        input[type="file"] { display: none; }
+        .btn {
+            background: #2b6cb0;
             color: white;
-            background: #2563eb;
             padding: 10px 25px;
-            border-radius: 8px;
-            display: inline-block;
-            margin-top: 15px;
-        }
-        a:hover {
-            background: #1d4ed8;
+            border: none;
+            border-radius: 10px;
+            margin-top: 20px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h2>Preview: {{ filename }}</h2>
-        {% if filename.endswith(('.png', '.jpg', '.jpeg', '.gif')) %}
-            <img src="/uploads/{{ filename }}" alt="{{ filename }}">
-        {% elif filename.endswith(('.mp4', '.webm')) %}
-            <video controls>
-                <source src="/uploads/{{ filename }}" type="video/mp4">
-            </video>
-        {% elif filename.endswith('.pdf') %}
-            <iframe src="/uploads/{{ filename }}" height="500px"></iframe>
-        {% else %}
-            <p>Preview not available for this file type.</p>
-        {% endif %}
+    <h1>📂 Smart QR File Share</h1>
+    <p>Upload any file and get a QR + encrypted protection</p>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <label class="upload-box">
+            <strong>📤 Click to select file</strong>
+            <input type="file" name="file" required>
+        </label>
         <br>
-        <a href="/uploads/{{ filename }}" download>⬇️ Download File</a>
-        <a href="/">🏠 Home</a>
-    </div>
+        <button type="submit" class="btn">Generate QR</button>
+    </form>
 </body>
 </html>

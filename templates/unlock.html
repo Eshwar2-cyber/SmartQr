@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Enter Key</title>
+  <style>
+    body { font-family: Arial; text-align:center; padding:50px; background:#f2f5fa; }
+    .card { background:white; display:inline-block; padding:40px; border-radius:15px; box-shadow:0 4px 20px rgba(0,0,0,0.1); }
+    input { padding:10px; width:250px; margin:10px; border:1px solid #ccc; border-radius:8px; }
+    button { background:#2563eb; color:white; padding:10px 25px; border:none; border-radius:8px; cursor:pointer; }
+    button:hover { background:#1e4ed8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🔐 Enter Key to Unlock</h2>
+    <form method="POST" action="/decrypt/{{ filename }}">
+      <input type="text" name="key" placeholder="Enter key here" required><br>
+      <button type="submit">Unlock</button>
+    </form>
+  </div>
+</body>
+</html>
