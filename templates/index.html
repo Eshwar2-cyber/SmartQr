@@ -1,10 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Smart QR File Share</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart QR File Share</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #f9f9f9, #e9eef5);
+            text-align: center;
+            padding-top: 100px;
+        }
+        .upload-box {
+            border: 2px dashed #2b6cb0;
+            padding: 40px;
+            border-radius: 15px;
+            background: #f1f5fb;
+            display: inline-block;
+            cursor: pointer;
+        }
+        input[type="file"] { display: none; }
+        .btn {
+            background: #2b6cb0;
+            color: white;
+            padding: 10px 25px;
+            border: none;
+            border-radius: 10px;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+        .filename {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+        }
+    </style>
 </head>
 <body>
-  <script>window.location.href = "/";</script>
+    <h1>📂 Smart QR File Share</h1>
+    <p>Upload any file and get a QR + encrypted protection</p>
+
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <label class="upload-box">
+            <strong>📤 Click to select file</strong>
+            <input type="file" id="fileInput" name="file" required>
+        </label>
+        <div class="filename" id="fileName">No file selected</div>
+        <br>
+        <button type="submit" class="btn">Generate QR</button>
+    </form>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+
+        fileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                fileName.textContent = "Selected: " + this.files[0].name;
+            } else {
+                fileName.textContent = "No file selected";
+            }
+        });
+    </script>
 </body>
 </html>

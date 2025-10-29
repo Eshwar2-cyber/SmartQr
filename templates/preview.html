@@ -17,6 +17,11 @@
             border-radius: 15px;
             background: #f1f5fb;
             display: inline-block;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .upload-box:hover {
+            background: #e0ebff;
         }
         input[type="file"] { display: none; }
         .btn {
@@ -28,18 +33,38 @@
             margin-top: 20px;
             cursor: pointer;
         }
+        #fileName {
+            margin-top: 10px;
+            color: #333;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <h1>📂 Smart QR File Share</h1>
     <p>Upload any file and get a QR + encrypted protection</p>
+
     <form action="/upload" method="post" enctype="multipart/form-data">
         <label class="upload-box">
             <strong>📤 Click to select file</strong>
-            <input type="file" name="file" required>
+            <input type="file" name="file" id="fileInput" required>
         </label>
+        <div id="fileName"></div>
         <br>
         <button type="submit" class="btn">Generate QR</button>
     </form>
+
+    <script>
+        const fileInput = document.getElementById("fileInput");
+        const fileName = document.getElementById("fileName");
+
+        fileInput.addEventListener("change", function() {
+            if (this.files.length > 0) {
+                fileName.textContent = "✅ Selected: " + this.files[0].name;
+            } else {
+                fileName.textContent = "";
+            }
+        });
+    </script>
 </body>
 </html>
