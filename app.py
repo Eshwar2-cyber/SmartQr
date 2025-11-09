@@ -23,7 +23,7 @@ os.makedirs(QR_FOLDER, exist_ok=True)
 os.makedirs(CHUNKS_FOLDER, exist_ok=True)
 
 PUBLIC_BASE = "https://smartqr-pe0z.onrender.com"
-CHUNK_SIZE = 4 * 1024 * 1024
+CHUNK_SIZE = 4 * 1024 * 1024  # 4MB stream size
 
 
 # ==========================
@@ -35,7 +35,7 @@ def home():
 
 
 # ==========================
-# CHUNK UPLOAD ENDPOINT
+# CHUNK UPLOAD
 # ==========================
 @app.route("/upload_chunk", methods=["POST"])
 def upload_chunk():
@@ -52,11 +52,7 @@ def upload_chunk():
     folder = os.path.join(CHUNKS_FOLDER, file_id)
     os.makedirs(folder, exist_ok=True)
 
-    try:
-        idx = int(index)
-    except ValueError:
-        return "Bad index", 400
-
+    idx = int(index)
     chunk_path = os.path.join(folder, f"{idx:08d}.part")
     chunk.save(chunk_path)
 
@@ -64,9 +60,9 @@ def upload_chunk():
 
 
 # ==========================
-# STREAM ENCRYPT/DECRYPT
+# STREAM ENCRYPT / DECRYPT
 # ==========================
-def encrypt_file_stream(in_path: str, out_path: str, key: bytes):
+def encrypt_file_stream(in_path, out_path, key):
     cipher = Fernet(key)
     with open(in_path, "rb") as fin, open(out_path, "wb") as fout:
         while True:
@@ -78,20 +74,20 @@ def encrypt_file_stream(in_path: str, out_path: str, key: bytes):
             fout.write(token)
 
 
-def decrypt_file_stream(in_path: str, out_path: str, key: bytes):
+def decrypt_file_stream(in_path, out_path, key):
     cipher = Fernet(key)
     with open(in_path, "rb") as fin, open(out_path, "wb") as fout:
         while True:
-            length_bytes = fin.read(4)
-            if not length_bytes:
+            length = fin.read(4)
+            if not length:
                 break
-            size = int.from_bytes(length_bytes, "big")
+            size = int.from_bytes(length, "big")
             token = fin.read(size)
             fout.write(cipher.decrypt(token))
 
 
 # ==========================
-# FINISH UPLOAD -> ENCRYPT -> QR
+# FINISH -> ENCRYPT -> QR
 # ==========================
 @app.route("/finish_upload")
 def finish_upload():
@@ -99,7 +95,7 @@ def finish_upload():
         file_id = request.args.get("file_id")
         filename = request.args.get("filename")
 
-        if not file_id or not filename:
+        if not (file_id and filename):
             return jsonify({"status": "error", "error": "missing params"}), 400
 
         safe_name = secure_filename(filename)
@@ -108,43 +104,40 @@ def finish_upload():
         if not os.path.isdir(folder):
             return jsonify({"status": "error", "error": "upload not found"}), 404
 
-        # Merge chunks
         final_path = os.path.join(UPLOAD_FOLDER, safe_name)
-        part_files = sorted([f for f in os.listdir(folder) if f.endswith(".part")])
+        parts = sorted(os.listdir(folder))
 
         with open(final_path, "wb") as outfile:
-            for pf in part_files:
-                with open(os.path.join(folder, pf), "rb") as ch:
-                    shutil.copyfileobj(ch, outfile)
+            for pf in parts:
+                if pf.endswith(".part"):
+                    with open(os.path.join(folder, pf), "rb") as ch:
+                        shutil.copyfileobj(ch, outfile)
 
         shutil.rmtree(folder, ignore_errors=True)
 
-        # Encrypt streamed
+        # Encrypt
         key = Fernet.generate_key()
         encrypted_path = os.path.join(ENCRYPTED_FOLDER, safe_name)
         encrypt_file_stream(final_path, encrypted_path, key)
 
-        # Save metadata
-        with open(os.path.join(ENCRYPTED_FOLDER, safe_name + ".meta"), "w") as mf:
+        # Save time
+        with open(encrypted_path + ".meta", "w") as mf:
             json.dump({"uploaded_at": time.time()}, mf)
 
-        try:
-            os.remove(final_path)
-        except:
-            pass
+        os.remove(final_path)
 
-        # ✅ Create QR safely
-        file_url = f"{PUBLIC_BASE}/view/{safe_name}"
-        qr_img = qrcode.make(file_url)
-        qr_filename = f"{safe_name}_qr.png"
-        qr_path = os.path.join(QR_FOLDER, qr_filename)
-        qr_img.save(qr_path)
+        # ✅ Create QR properly
+        link = f"{PUBLIC_BASE}/view/{safe_name}"
+        qr_name = f"{safe_name}_qr.png"
+        qr_path = os.path.join(QR_FOLDER, qr_name)
+        img = qrcode.make(link)
+        img.save(qr_path)
 
         return jsonify({
             "status": "ok",
             "key": key.decode(),
-            "link": file_url,
-            "qr": qr_filename
+            "qr": qr_name,
+            "link": link
         })
 
     except Exception as e:
@@ -173,7 +166,7 @@ def view_file(filename):
 
 
 # ==========================
-# ENTER KEY PAGE
+# UNLOCK PAGE
 # ==========================
 @app.route("/unlock/<filename>")
 def unlock(filename):
@@ -181,7 +174,7 @@ def unlock(filename):
 
 
 # ==========================
-# DECRYPT STREAMED
+# DECRYPT
 # ==========================
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt_file(filename):
@@ -199,7 +192,7 @@ def decrypt_file(filename):
             filename=filename,
             qr_image=None,
             public_link=f"/uploads/{filename}",
-            key=None
+            uploaded_at=None
         )
     except:
         return "<h2>❌ Invalid Key or Decryption Error.</h2><a href='/'>Home</a>"
@@ -217,17 +210,27 @@ def download_file(filename):
 
 
 # ==========================
-# SUCCESS PAGE
+# ✅ SUCCESS PAGE FIXED
 # ==========================
 @app.route("/success/<filename>")
 def success_page(filename):
-    qr_image = f"{filename}_qr.png"
+    qr_url = f"{PUBLIC_BASE}/static/qrcodes/{filename}_qr.png"
+
+    meta = os.path.join(ENCRYPTED_FOLDER, filename + ".meta")
+    uploaded_at = None
+    if os.path.exists(meta):
+        try:
+            with open(meta, "r") as mf:
+                uploaded_at = json.load(mf).get("uploaded_at")
+        except:
+            uploaded_at = None
+
     return render_template(
         "success.html",
         filename=filename,
-        qr_image=qr_image,
+        qr_image=qr_url,     # ✅ Full URL now
         public_link=f"{PUBLIC_BASE}/view/{filename}",
-        key=None
+        uploaded_at=uploaded_at
     )
 
 

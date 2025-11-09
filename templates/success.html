@@ -11,7 +11,23 @@
         a:hover, button:hover { background: #1d4ed8; }
         .share-btn { background:#0ea5e9 !important; }
         .copy-btn { background:#059669 !important; }
-        .key-box { background: #f3f4f6; border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-top: 15px; word-break: break-all; display:none; }
+        
+        .key-row { 
+            background: #f3f4f6; 
+            border: 1px solid #ccc; 
+            border-radius: 8px; 
+            padding: 10px; 
+            margin-top: 15px; 
+            display: flex; 
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            font-weight: bold;
+            word-break: break-all;
+        }
+
+        #warn { color:red; font-size:14px; display:none; }
+        #countdown { margin-top:10px; font-weight:600; color:#444; }
     </style>
 </head>
 <body>
@@ -19,13 +35,19 @@
 <div class="card">
     <h2>✅ QR Code Generated</h2>
 
-    <img src="/static/qrcodes/{{ qr_image }}" alt="QR Code">
+    <img src="{{ qr_image }}" alt="QR Code">
 
-    <div class="key-box" id="keyBox"></div>
+    <!-- Hidden upload time -->
+    <input type="hidden" id="uploadedAt" value="{{ uploaded_at }}">
 
-    <p id="warn" style="display:none; color:red; font-size:14px;">⚠️ Save this key — it won't show again.</p>
+    <!-- Key + Copy Button INLINE ✅ -->
+    <div class="key-row" id="keyRow" style="display:none;">
+        <span id="keyText"></span>
+        <button class="copy-btn" id="copyBtn">📋 Copy</button>
+    </div>
 
-    <button class="copy-btn" id="copyBtn" style="display:none;">📋 Copy Key</button><br>
+    <p id="warn">⚠️ Save this key — it won't show again.</p>
+    <p id="countdown"></p>
 
     <a href="{{ public_link }}" target="_blank">View File Page</a><br>
 
@@ -35,37 +57,59 @@
 </div>
 
 <script>
-let key = sessionStorage.getItem("last_upload_key");
+const key = sessionStorage.getItem("last_upload_key");
 
+// ✅ Show key and copy inline
 if (key) {
-    document.getElementById("keyBox").style.display = "block";
-    document.getElementById("keyBox").innerHTML = "<strong>Your Key:</strong><br>" + key;
+    document.getElementById("keyRow").style.display = "flex";
+    document.getElementById("keyText").textContent = key;
     document.getElementById("warn").style.display = "block";
-    document.getElementById("copyBtn").style.display = "inline-block";
 }
 
-// ✅ COPY KEY BUTTON
+// ✅ Copy button
 document.getElementById("copyBtn").addEventListener("click", () => {
     navigator.clipboard.writeText(key)
         .then(() => alert("✅ Key copied!"))
         .catch(() => alert("❌ Could not copy key"));
 });
 
-// ✅ Share button
+// ✅ Share
 document.getElementById("shareBtn").addEventListener("click", function() {
-    let link = "{{ public_link }}";
-    let finalKey = key || "(Key shown on page)";
-    let text = `Download the file using this link:\n${link}\nKey: ${finalKey}`;
-
+    let text = `Download:\n{{ public_link }}\nKey: ${key}`;
     if (navigator.share) {
-        navigator.share({ title: "Smart QR File Share", text, url: link })
-        .catch(() => alert("Sharing cancelled"));
+        navigator.share({ title:"Smart QR File Share", text, url:"{{ public_link }}" });
     } else {
         alert("Sharing not supported on this browser 😔");
     }
 });
 
-// After leaving page, clear key so it won't reappear again
+// ✅ Countdown on success page
+const uploadedAt = parseFloat(document.getElementById("uploadedAt").value);
+const countdown = document.getElementById("countdown");
+
+if (uploadedAt) {
+    function update() {
+        const now = Date.now() / 1000;
+        const expire = uploadedAt + 86400;
+        const remain = expire - now;
+
+        if (remain <= 0) {
+            countdown.textContent = "❌ File has expired";
+            return;
+        }
+
+        const h = Math.floor(remain / 3600);
+        const m = Math.floor((remain % 3600) / 60);
+        const s = Math.floor(remain % 60);
+
+        countdown.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
+    }
+
+    update();
+    setInterval(update, 1000);
+}
+
+// ✅ remove key after leaving
 window.addEventListener("beforeunload", () => {
     sessionStorage.removeItem("last_upload_key");
 });
