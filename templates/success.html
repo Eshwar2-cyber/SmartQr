@@ -8,9 +8,11 @@
         .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; }
         a, button { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; margin-top: 15px; display: inline-block; border: none; cursor: pointer; }
         button:hover, a:hover { background: #1d4ed8; }
-        .key-box { display:flex; background:#f3f4f6; padding:10px; border-radius:8px; border:1px solid #ddd; gap:10px; align-items:center; justify-content:center; word-break: break-all; }
+        .key-box { background:#f3f4f6; border:1px solid #ddd; padding:10px; border-radius:8px; display:flex; gap:10px; justify-content:center; align-items:center; word-break:break-all; }
         .copy-btn { background:#059669; }
         #warn { color:red; }
+        #countdown { font-weight: bold; margin-top: 10px; color:#222; }
+        #expired { color:red; font-weight:bold; display:none; }
     </style>
 </head>
 <body>
@@ -18,8 +20,11 @@
 <div class="card">
     <h2>✅ QR Code Generated</h2>
 
-    <!-- ✅ FIXED QR -->
-    <img src="/static/qrcodes/{{ filename }}_qr.png" width="230" alt="QR Code">
+    <!-- ✅ QR ALWAYS WORKS -->
+    <img src="{{ qr_url }}" width="230" alt="QR Code">
+
+    <!-- hidden uploaded time -->
+    <input type="hidden" id="uploadedAt" value="{{ uploaded_at }}">
 
     <div class="key-box" id="keyRow" style="display:none;">
         <span id="keyText"></span>
@@ -27,6 +32,9 @@
     </div>
 
     <p id="warn" style="display:none;">⚠️ Save this key — it won't show again.</p>
+
+    <p id="countdown"></p>
+    <p id="expired">❌ File expired & deleted</p>
 
     <a href="{{ public_link }}" target="_blank">View File Page</a><br>
     <button onclick="shareFile()">🔗 Share</button><br>
@@ -42,10 +50,39 @@ if (key) {
 }
 copyBtn.onclick = () => navigator.clipboard.writeText(key);
 
+// ✅ countdown
+const uploadedAt = parseFloat(document.getElementById("uploadedAt").value);
+const countdownEl = document.getElementById("countdown");
+const expiredEl = document.getElementById("expired");
+
+function updateCountdown() {
+    if (!uploadedAt) return;
+
+    const expire = uploadedAt + 86400; // 24 hrs
+    const now = Date.now() / 1000;
+    const remain = expire - now;
+
+    if (remain <= 0) {
+        countdownEl.style.display = "none";
+        expiredEl.style.display = "block";
+        return;
+    }
+
+    const h = Math.floor(remain / 3600);
+    const m = Math.floor((remain % 3600) / 60);
+    const s = Math.floor(remain % 60);
+
+    countdownEl.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
+}
+
+updateCountdown();
+setInterval(updateCountdown, 1000);
+
+// ✅ share button
 function shareFile() {
     if (navigator.share) {
         navigator.share({
-            text: "Download using this link and key:\n{{ public_link }}\nKey: " + key,
+            text: "Download with this link:\n{{ public_link }}\nKey: " + key,
             url: "{{ public_link }}"
         });
     } else {
@@ -53,6 +90,7 @@ function shareFile() {
     }
 }
 
+// ✅ remove key on leaving
 window.addEventListener("beforeunload", ()=>sessionStorage.removeItem("last_upload_key"));
 </script>
 
