@@ -11,7 +11,6 @@
         .key-box { display:flex; background:#f3f4f6; padding:10px; border-radius:8px; border:1px solid #ddd; gap:10px; align-items:center; justify-content:center; word-break: break-all; }
         .copy-btn { background:#059669; }
         #warn { color:red; }
-        #countdown { font-weight:bold; margin-top:10px; }
     </style>
 </head>
 <body>
@@ -19,10 +18,8 @@
 <div class="card">
     <h2>✅ QR Code Generated</h2>
 
-    <!-- ✅ QR ALWAYS WORKS -->
-    <img src="{{ url_for('static', filename='qrcodes/' + filename + '_qr.png') }}" alt="QR Code" width="230">
-
-    <input type="hidden" id="uploadedAt" value="{{ uploaded_at }}">
+    <!-- ✅ FIXED QR -->
+    <img src="/static/qrcodes/{{ filename }}_qr.png" width="230" alt="QR Code">
 
     <div class="key-box" id="keyRow" style="display:none;">
         <span id="keyText"></span>
@@ -30,7 +27,6 @@
     </div>
 
     <p id="warn" style="display:none;">⚠️ Save this key — it won't show again.</p>
-    <p id="countdown"></p>
 
     <a href="{{ public_link }}" target="_blank">View File Page</a><br>
     <button onclick="shareFile()">🔗 Share</button><br>
@@ -39,48 +35,24 @@
 
 <script>
 const key = sessionStorage.getItem("last_upload_key");
-
-// ✅ show key inline
 if (key) {
     keyRow.style.display = "flex";
     keyText.textContent = key;
     warn.style.display = "block";
 }
+copyBtn.onclick = () => navigator.clipboard.writeText(key);
 
-// ✅ copy button
-copyBtn.onclick = () => navigator.clipboard.writeText(key).then(()=>alert("✅ Copied"));
-
-// ✅ share
 function shareFile() {
-    let text = "Download File:\n{{ public_link }}\nKey: " + key;
     if (navigator.share) {
-        navigator.share({ text, url:"{{ public_link }}" });
+        navigator.share({
+            text: "Download using this link and key:\n{{ public_link }}\nKey: " + key,
+            url: "{{ public_link }}"
+        });
     } else {
         alert("Sharing not supported");
     }
 }
 
-// ✅ countdown timer
-const uploadedAt = parseFloat(document.getElementById("uploadedAt").value);
-function update() {
-    if (!uploadedAt) return;
-    const now = Date.now() / 1000;
-    const remain = (uploadedAt + 86400) - now;
-
-    if (remain <= 0) {
-        countdown.textContent = "❌ File expired";
-        return;
-    }
-
-    const h = Math.floor(remain/3600);
-    const m = Math.floor((remain%3600)/60);
-    const s = Math.floor(remain%60);
-    countdown.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
-}
-update();
-setInterval(update, 1000);
-
-// ✅ clear key after leaving
 window.addEventListener("beforeunload", ()=>sessionStorage.removeItem("last_upload_key"));
 </script>
 
