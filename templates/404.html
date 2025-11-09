@@ -1,17 +1,21 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>File Not Found</title>
-  <style>
-    body { font-family: Arial; text-align:center; padding:100px; background:#fafafa; }
-    h1 { color:#d9534f; }
-    a { color:#007bff; text-decoration:none; }
-  </style>
+    <meta charset="UTF-8">
+    <title>File Not Found</title>
+    <style>
+        body { font-family: Arial; text-align:center; background:#f9fafc; padding:50px; }
+        .box { background:white; padding:40px; border-radius:12px; display:inline-block; }
+        a { background:#2563eb; padding:10px 20px; color:white; border-radius:8px; text-decoration:none; }
+    </style>
 </head>
 <body>
-  <h1>404 - File Not Found</h1>
-  <p>The file <b>{{ filename }}</b> could not be found or has expired.</p>
-  <a href="/">← Go Back Home</a>
+
+<div class="box">
+    <h2>⚠️ File Not Found or Expired</h2>
+    <p>Link: {{ filename }}</p>
+    <a href="/">Go Home</a>
+</div>
+
 </body>
 </html>

@@ -1,13 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <title>Encrypted File</title>
+    <title>Protected File</title>
     <style>
-        body { font-family: Arial; text-align: center; padding: 50px; background: #f4f5f7; }
-        .card { background: white; padding: 40px; border-radius: 15px; box-shadow:0 4px 15px rgba(0,0,0,0.1); display:inline-block; }
-        a { text-decoration: none; background: #2563eb; color: white; padding: 10px 20px; border-radius: 8px; }
-        a:hover { background: #1d4ed8; }
+        body { font-family: Arial; text-align: center; background:#f9fafc; padding: 50px; }
+        .card { background:white; padding:40px; border-radius:15px; box-shadow:0 4px 15px rgba(0,0,0,0.1); display:inline-block; }
+        a{ background:#2563eb; color:white; padding:10px 20px; border-radius:8px; text-decoration:none; }
         #expiredMsg { color:red; font-weight:bold; display:none; }
         #countdown { font-weight:bold; margin-top:10px; }
     </style>
@@ -15,15 +14,21 @@
 <body>
 
 <div class="card">
-    <h2>🔒 This file is protected</h2>
+    <h2>🔒 Encrypted File</h2>
+
+    <!-- Store upload time safely -->
+    <input type="hidden" id="uploadedAt" value="{{ uploaded_at }}">
+
     <p id="countdown"></p>
-    <p id="expiredMsg">❌ File has expired and was deleted.</p>
+    <p id="expiredMsg">❌ File expired and deleted</p>
 
     <a id="unlockBtn" href="/unlock/{{ filename }}">Enter Key</a>
 </div>
 
 <script>
-const uploadedAt = "{{ uploaded_at }}";
+const val = document.getElementById("uploadedAt").value;
+const uploadedAt = val ? parseFloat(val) : null;
+
 const countdown = document.getElementById("countdown");
 const expiredMsg = document.getElementById("expiredMsg");
 const unlockBtn = document.getElementById("unlockBtn");
@@ -31,7 +36,7 @@ const unlockBtn = document.getElementById("unlockBtn");
 if (uploadedAt) {
     function update() {
         const now = Date.now() / 1000;
-        const expire = Number(uploadedAt) + 86400;
+        const expire = uploadedAt + 86400;  // 24 hours
         const remain = expire - now;
 
         if (remain <= 0) {
@@ -45,14 +50,13 @@ if (uploadedAt) {
         const m = Math.floor((remain % 3600) / 60);
         const s = Math.floor(remain % 60);
 
-        countdown.textContent = `⏳ File expires in: ${h}h ${m}m ${s}s`;
+        countdown.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
     }
 
     update();
     setInterval(update, 1000);
 }
 </script>
-
 
 </body>
 </html>
