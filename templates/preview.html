@@ -99,7 +99,8 @@ async function startUpload(){
   }
 
   etaText.innerHTML = "✅ Upload complete! Redirecting...";
-  window.location.href = `/success/${encodeURIComponent(file.name)}?key=${data.key}`;
+  window.location.href = `/success/${encodeURIComponent(file.name)}?key=${encodeURIComponent(data.key)}`;
+
 }
 </script>
 
