@@ -1,21 +1,18 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>File Not Found</title>
+    <title>Not Found</title>
     <style>
-        body { font-family: Arial; text-align:center; background:#f9fafc; padding:50px; }
-        .box { background:white; padding:40px; border-radius:12px; display:inline-block; }
-        a { background:#2563eb; padding:10px 20px; color:white; border-radius:8px; text-decoration:none; }
+        body { text-align:center; font-family:Arial; background:#fff; padding:60px; }
+        a{ background:#2563eb; color:white; padding:10px 20px; border-radius:6px; text-decoration:none; }
     </style>
 </head>
 <body>
 
-<div class="box">
-    <h2>⚠️ File Not Found or Expired</h2>
-    <p>Link: {{ filename }}</p>
-    <a href="/">Go Home</a>
-</div>
+<h2>❌ File not found or expired</h2>
+<p>{{ filename }}</p>
+<a href="/">🏠 Home</a>
 
 </body>
 </html>

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, jsonify, url_for
+from flask import Flask, render_template, request, send_file, jsonify
 import os, qrcode, time, threading, shutil, json
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
@@ -6,8 +6,10 @@ from cryptography.fernet import Fernet
 app = Flask(__name__)
 
 # ==========================
-# FOLDERS
+# Limits & Folders
 # ==========================
+app.config['MAX_CONTENT_LENGTH'] = 256 * 1024 * 1024  # 256 MB
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 ENCRYPTED_FOLDER = os.path.join(BASE_DIR, "encrypted")
@@ -19,11 +21,12 @@ os.makedirs(ENCRYPTED_FOLDER, exist_ok=True)
 os.makedirs(QR_FOLDER, exist_ok=True)
 os.makedirs(CHUNKS_FOLDER, exist_ok=True)
 
-CHUNK_SIZE = 4 * 1024 * 1024
 PUBLIC_BASE = "https://smartqr-pe0z.onrender.com"
+CHUNK_SIZE = 4 * 1024 * 1024
+
 
 # ==========================
-# HOME
+# Home
 # ==========================
 @app.route("/")
 def home():
@@ -31,7 +34,7 @@ def home():
 
 
 # ==========================
-# UPLOAD CHUNKS
+# Chunk Upload
 # ==========================
 @app.route("/upload_chunk", methods=["POST"])
 def upload_chunk():
@@ -48,13 +51,14 @@ def upload_chunk():
     os.makedirs(folder, exist_ok=True)
 
     idx = int(index)
-    chunk.save(os.path.join(folder, f"{idx:08d}.part"))
+    chunk_path = os.path.join(folder, f"{idx:08d}.part")
+    chunk.save(chunk_path)
 
     return "OK", 200
 
 
 # ==========================
-# STREAM ENCRYPT
+# Stream Encrypt
 # ==========================
 def encrypt_file_stream(in_path, out_path, key):
     cipher = Fernet(key)
@@ -69,7 +73,7 @@ def encrypt_file_stream(in_path, out_path, key):
 
 
 # ==========================
-# FINISH UPLOAD → QR
+# Finish → Encrypt → Save QR
 # ==========================
 @app.route("/finish_upload")
 def finish_upload():
@@ -77,12 +81,16 @@ def finish_upload():
         file_id = request.args.get("file_id")
         filename = request.args.get("filename")
 
+        if not (file_id and filename):
+            return jsonify({"status": "error", "error": "missing params"}), 400
+
         safe_name = secure_filename(filename)
         folder = os.path.join(CHUNKS_FOLDER, file_id)
 
         final_path = os.path.join(UPLOAD_FOLDER, safe_name)
         part_files = sorted(f for f in os.listdir(folder) if f.endswith(".part"))
 
+        # Merge chunks
         with open(final_path, "wb") as out:
             for part in part_files:
                 with open(os.path.join(folder, part), "rb") as c:
@@ -90,45 +98,54 @@ def finish_upload():
 
         shutil.rmtree(folder, ignore_errors=True)
 
+        # Encrypt
         key = Fernet.generate_key()
         encrypted_path = os.path.join(ENCRYPTED_FOLDER, safe_name)
         encrypt_file_stream(final_path, encrypted_path, key)
-        try: os.remove(final_path)
-        except: pass
 
-        # ✅ SAVE TIME
         with open(encrypted_path + ".meta", "w") as mf:
             json.dump({"uploaded_at": time.time()}, mf)
 
-        # ✅ CREATE QR INSIDE STATIC FOLDER
-        qr_path = os.path.join(QR_FOLDER, f"{safe_name}_qr.png")
+        os.remove(final_path)
+
+        # ✅ Create QR correctly
+        qr_filename = f"{safe_name}_qr.png"
+        qr_path = os.path.join(QR_FOLDER, qr_filename)
         qrcode.make(f"{PUBLIC_BASE}/view/{safe_name}").save(qr_path)
 
-        return jsonify({"status": "ok", "key": key.decode(), "link": f"{PUBLIC_BASE}/view/{safe_name}"}), 200
+        return jsonify({
+            "status": "ok",
+            "key": key.decode(),
+            "qr": qr_filename,
+            "filename": safe_name
+        })
 
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
 # ==========================
-# VIEW FILE
+# View File Page
 # ==========================
 @app.route("/view/<filename>")
 def view_file(filename):
     encrypted_path = os.path.join(ENCRYPTED_FOLDER, filename)
     if not os.path.exists(encrypted_path):
-        return render_template("404.html")
+        return render_template("404.html", filename=filename)
 
     uploaded_at = None
     meta = encrypted_path + ".meta"
     if os.path.exists(meta):
-        uploaded_at = json.load(open(meta)).get("uploaded_at", None)
+        try:
+            uploaded_at = json.load(open(meta)).get("uploaded_at")
+        except:
+            pass
 
     return render_template("view.html", filename=filename, uploaded_at=uploaded_at)
 
 
 # ==========================
-# UNLOCK PAGE
+# Unlock Page
 # ==========================
 @app.route("/unlock/<filename>")
 def unlock(filename):
@@ -136,13 +153,13 @@ def unlock(filename):
 
 
 # ==========================
-# DECRYPT FILE
+# Decrypt
 # ==========================
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt_file(filename):
     encrypted_path = os.path.join(ENCRYPTED_FOLDER, filename)
     if not os.path.exists(encrypted_path):
-        return render_template("404.html")
+        return render_template("404.html", filename=filename)
 
     key = request.form.get("key")
     try:
@@ -150,32 +167,26 @@ def decrypt_file(filename):
         decrypt_file_stream(encrypted_path, decrypted_path, key.encode())
         return send_file(decrypted_path, as_attachment=True)
     except:
-        return "❌ Wrong Key"
+        return "<h2>❌ Wrong Key</h2><a href='/'>Home</a>"
 
 
 # ==========================
-# SUCCESS PAGE (QR FROM STATIC)
+# ✅ SUCCESS PAGE (QR ALWAYS WORKS)
 # ==========================
 @app.route("/success/<filename>")
 def success_page(filename):
-    meta = os.path.join(ENCRYPTED_FOLDER, filename + ".meta")
-    uploaded_at = None
-    if os.path.exists(meta):
-        uploaded_at = json.load(open(meta)).get("uploaded_at", None)
-
-    qr_url = url_for('static', filename=f"qrcodes/{filename}_qr.png")
-
+    safe = secure_filename(filename)
+    qr_image = f"{safe}_qr.png"  # ✅ correct QR filename
     return render_template(
         "success.html",
-        filename=filename,
-        public_link=f"{PUBLIC_BASE}/view/{filename}",
-        qr_url=qr_url,
-        uploaded_at=uploaded_at
+        filename=safe,
+        qr_image=qr_image,
+        public_link=f"{PUBLIC_BASE}/view/{safe}"
     )
 
 
 # ==========================
-# CLEANUP
+# Auto Cleanup
 # ==========================
 def cleanup_worker():
     while True:
@@ -193,6 +204,12 @@ def cleanup_worker():
                 pass
         time.sleep(600)
 
+
 threading.Thread(target=cleanup_worker, daemon=True).start()
 
-app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+# ==========================
+# Run
+# ==========================
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

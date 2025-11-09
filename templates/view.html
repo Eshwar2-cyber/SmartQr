@@ -1,15 +1,14 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Encrypted File</title>
+    <title>Protected File</title>
     <style>
         body { font-family: Arial; text-align: center; background:#f9fafc; padding: 50px; }
         .card { background:white; padding:40px; border-radius:15px; box-shadow:0 4px 15px rgba(0,0,0,0.1); display:inline-block; }
-        a { background:#2563eb; color:white; padding:10px 20px; border-radius:8px; text-decoration:none; }
-        a:hover { background:#1d4ed8; }
+        a{ background:#2563eb; color:white; padding:10px 20px; border-radius:8px; text-decoration:none; }
+        #expiredMsg { color:red; font-weight:bold; display:none; }
         #countdown { font-weight:bold; margin-top:10px; }
-        #expired { color:red; font-weight:bold; display:none; }
     </style>
 </head>
 <body>
@@ -17,47 +16,44 @@
 <div class="card">
     <h2>🔒 Encrypted File</h2>
 
-    <p><strong>File:</strong> {{ filename }}</p>
-
-    <!-- show uploaded time -->
-    <input type="hidden" id="uploadedAt" value="{{ uploaded_at }}">
-
     <p id="countdown"></p>
-    <p id="expired">❌ File expired & deleted.</p>
+    <p id="expiredMsg">❌ File expired and deleted</p>
 
     <a id="unlockBtn" href="/unlock/{{ filename }}">Enter Key</a>
 </div>
 
 <script>
-const uploadedAt = parseFloat(document.getElementById("uploadedAt").value);
+// ✅ FIX: wrap value in quotes
+const uploadedAt = "{{ uploaded_at }}";
 
-const countdownEl = document.getElementById("countdown");
-const expiredEl = document.getElementById("expired");
+const countdown = document.getElementById("countdown");
+const expiredMsg = document.getElementById("expiredMsg");
 const unlockBtn = document.getElementById("unlockBtn");
 
-function updateTimer() {
-    if (!uploadedAt) return;
+if (uploadedAt && uploadedAt !== "None") {
 
-    const expire = uploadedAt + 86400; // 24 hrs
-    const now = Date.now() / 1000;
-    const remain = expire - now;
+    function update() {
+        const now = Date.now() / 1000;
+        const expire = parseFloat(uploadedAt) + 86400;
+        const remain = expire - now;
 
-    if (remain <= 0) {
-        countdownEl.style.display = "none";
-        unlockBtn.style.display = "none";
-        expiredEl.style.display = "block";
-        return;
+        if (remain <= 0) {
+            countdown.style.display = "none";
+            unlockBtn.style.display = "none";
+            expiredMsg.style.display = "block";
+            return;
+        }
+
+        const h = Math.floor(remain / 3600);
+        const m = Math.floor((remain % 3600) / 60);
+        const s = Math.floor(remain % 60);
+
+        countdown.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
     }
 
-    const h = Math.floor(remain / 3600);
-    const m = Math.floor((remain % 3600) / 60);
-    const s = Math.floor(remain % 60);
-
-    countdownEl.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
+    update();
+    setInterval(update, 1000);
 }
-
-updateTimer();
-setInterval(updateTimer, 1000);
 </script>
 
 </body>
