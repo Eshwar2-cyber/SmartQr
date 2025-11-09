@@ -1,68 +1,56 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>QR Generated</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; background: #f9fafc; padding: 50px; }
-    .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; max-width: 520px; width: 100%; }
-    img.qr { width: 260px; height: auto; margin-top: 20px; border-radius: 8px; }
-    .btn { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; display: inline-block; margin: 8px; border: none; cursor: pointer; }
-    .btn:hover { background: #1d4ed8; }
-    .key-box { background: #e8ffe8; border: 1px solid #16a34a; border-radius: 8px; padding: 10px; word-break: break-all; margin: 15px auto; width: 90%; }
-    .danger { color: #e11d48; margin-top: 10px; }
-    .muted { color: #374151; margin-top: 10px; }
-  </style>
+<meta charset="UTF-8">
+<title>QR Generated</title>
+<style>
+  body{font-family:Arial;text-align:center;background:#f9fafc;padding:40px}
+  .card{background:#fff;padding:30px;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.08);display:inline-block;width:90%;max-width:500px}
+  img{width:240px;margin:10px}
+  .key-box{background:#e8ffe8;border:1px solid #b2e6b2;padding:10px;border-radius:8px;margin-top:10px;font-family:monospace}
+  .btn{padding:10px 22px;border:none;border-radius:8px;background:#2563eb;color:#fff;margin:6px;cursor:pointer}
+</style>
 </head>
 <body>
 
 <div class="card">
   <h2>✅ QR Code & Key Generated!</h2>
 
-  <img class="qr"
-     src="https://smartqr-oyjd.onrender.com/static/qrcodes/{{ qr_image }}?v={{ uuid }}"
+  <img class="qr" 
+     src="{{ public }}/static/qrcodes/{{ qr_image }}?v={{ uuid }}" 
      alt="QR Code">
 
+  <div class="key-box" id="keyBox">{{ key }}</div>
 
-  <div class="key-box" id="keyBox">
-    <strong>Your Key:</strong><br>{{ key }}
+  <div>
+    <button class="btn" onclick="copyKey()">Copy Key</button>
+    <a class="btn" href="{{ public }}/view/{{ filename }}" target="_blank">Open File Page</a>
   </div>
 
-  <button class="btn" onclick="copyKey()">Copy Key</button>
-  <a class="btn" href="{{ public_link }}" target="_blank">Open File Page</a>
-  <button class="btn" onclick="shareWA()">Share WhatsApp</button>
-
-  <p class="danger">⚠ Save this key — it won't show again.</p>
+  <p style="color:red">⚠️ Save this key — it won't show again.</p>
 
   {% if expires_in is not none %}
-  <p class="muted">⏳ Expires in <span id="count"></span></p>
+    <p>⏳ Expires in <span id="count"></span></p>
   {% endif %}
 
   <a class="btn" href="/">🏠 Home</a>
 </div>
 
 <script>
-function copyKey() {
-  const txt = document.getElementById('keyBox').innerText.replace("Your Key:", "").trim();
-  navigator.clipboard.writeText(txt);
-  alert("Key copied!");
+function copyKey(){
+  const k = document.getElementById("keyBox").innerText;
+  navigator.clipboard.writeText(k);
+  alert("Key Copied!");
 }
-
-function shareWA() {
-  const txt = "File Link: {{ public_link }}\nKey: {{ key }}";
-  window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
-}
-
 {% if expires_in is not none %}
 let t = {{ expires_in }};
-function timer() {
-  if (t <= 0) { document.getElementById("count").innerText = "Expired"; return; }
-  const h = Math.floor(t/3600), m = Math.floor((t%3600)/60), s = t%60;
-  document.getElementById("count").innerText = `${h}h ${m}m ${s}s`;
+function tick(){
+  if(t<=0){ document.getElementById("count").innerText="Expired"; return; }
+  let h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
+  document.getElementById("count").innerText=`${h}h ${m}m ${s}s`;
   t--;
 }
-timer();
-setInterval(timer, 1000);
+tick(); setInterval(tick,1000);
 {% endif %}
 </script>
 
