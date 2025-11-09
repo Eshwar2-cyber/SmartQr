@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, send_file, jsonify
 import os, qrcode, base64, time, shutil, json
 from werkzeug.utils import secure_filename
+from uuid import uuid4
 from Cryptodome.Cipher import AES
 
 app = Flask(__name__)
@@ -15,16 +16,15 @@ for f in [UPLOAD, ENCRYPT, QRFOLDER, CHUNKS]:
     os.makedirs(f, exist_ok=True)
 
 PUBLIC = "https://smartqr-oyjd.onrender.com"
-CHUNK_SIZE = 1 * 1024 * 1024  # ✅ Safe 1MB chunks
+CHUNK_SIZE = 4 * 1024 * 1024  # 4MB
+NONCE_LEN = 16
+TAG_LEN = 16
 
 def make_key():
     return base64.urlsafe_b64encode(os.urandom(32)).decode()
 
 def parse_key(k):
     return base64.urlsafe_b64decode(k.encode())
-
-NONCE_LEN = 16
-TAG_LEN = 16
 
 def encrypt_stream(src, dst, keyb):
     with open(src, "rb") as fin, open(dst, "wb") as fout:
@@ -35,12 +35,25 @@ def encrypt_stream(src, dst, keyb):
             ct, tag = cipher.encrypt_and_digest(data)
             fout.write(cipher.nonce)
             fout.write(tag)
-            fout.write(len(ct).to_bytes(4,"big"))
+            fout.write(len(ct).to_bytes(4, "big"))
             fout.write(ct)
+
+def decrypt_stream(src, dst, keyb):
+    with open(src, "rb") as fin, open(dst, "wb") as fout:
+        while True:
+            nonce = fin.read(NONCE_LEN)
+            if not nonce: break
+            tag = fin.read(TAG_LEN)
+            size = int.from_bytes(fin.read(4), "big")
+            ct = fin.read(size)
+            cipher = AES.new(keyb, AES.MODE_EAX, nonce=nonce)
+            pt = cipher.decrypt(ct)
+            cipher.verify(tag)
+            fout.write(pt)
 
 @app.route("/")
 def index():
-    return render_template("preview.html")  # ✅ chunk upload page
+    return render_template("preview.html")
 
 @app.route("/upload_chunk", methods=["POST"])
 def upload_chunk():
@@ -61,42 +74,45 @@ def finish_upload():
     folder = os.path.join(CHUNKS, file_id)
 
     if not os.path.isdir(folder):
-        return jsonify({"status":"error"}), 404
+        return jsonify({"status": "error"}), 404
 
     final_path = os.path.join(UPLOAD, filename)
-    parts = sorted(os.listdir(folder))
-
+    parts = sorted([f for f in os.listdir(folder) if f.endswith(".part")])
     with open(final_path, "wb") as out:
         for p in parts:
             with open(os.path.join(folder, p), "rb") as ch:
                 shutil.copyfileobj(ch, out)
-
     shutil.rmtree(folder)
 
     key = make_key()
     keyb = parse_key(key)
-
     enc = os.path.join(ENCRYPT, filename)
     encrypt_stream(final_path, enc, keyb)
     os.remove(final_path)
 
-    with open(enc + ".meta","w") as f:
+    with open(enc + ".meta", "w") as f:
         json.dump({"time": time.time()}, f)
 
-    qr_name = f"{filename}_qr.png"
-    qrcode.make(f"{PUBLIC}/view/{filename}").save(os.path.join(QRFOLDER, qr_name))
+    qr_image = f"{filename}_qr.png"
+    qr_path = os.path.join(QRFOLDER, qr_image)
+    qrcode.make(f"{PUBLIC}/view/{filename}").save(qr_path)
+
+    try:
+        os.chmod(qr_path, 0o644)
+    except:
+        pass
 
     return jsonify({
-        "status":"ok",
-        "key":key,
-        "qr":qr_name,
-        "public":f"{PUBLIC}/view/{filename}",
-        "filename":filename
+        "status": "ok",
+        "key": key,
+        "qr_image": qr_image,
+        "public_link": f"{PUBLIC}/view/{filename}",
+        "filename": filename
     })
 
 @app.route("/success/<filename>")
 def success(filename):
-    qr = f"{filename}_qr.png"
+    qr_image = f"{filename}_qr.png"
     key = request.args.get("key")
     public_link = f"{PUBLIC}/view/{filename}"
 
@@ -109,19 +125,43 @@ def success(filename):
     return render_template(
         "success.html",
         filename=filename,
-        qr_image=qr,
+        qr_image=qr_image,
         public_link=public_link,
         key=key,
         expires_in=expires,
-        time=time.time()   # ✅ cache-buster for QR
+        uuid=uuid4()
     )
 
 @app.route("/view/<filename>")
-def viewfile(filename):
+def view(filename):
     enc = os.path.join(ENCRYPT, filename)
     if not os.path.exists(enc):
         return render_template("404.html")
     return render_template("view.html", filename=filename)
+
+@app.route("/unlock/<filename>")
+def unlock(filename):
+    return render_template("unlock.html", filename=filename)
+
+@app.route("/decrypt/<filename>", methods=["POST"])
+def decrypt(filename):
+    key = request.form.get("key")
+    enc = os.path.join(ENCRYPT, filename)
+    if not os.path.exists(enc):
+        return render_template("404.html")
+
+    try:
+        keyb = parse_key(key)
+    except:
+        return "<h2>❌ Invalid key</h2><a href='/'>Home</a>"
+
+    dec = os.path.join(UPLOAD, filename)
+    try:
+        decrypt_stream(enc, dec, keyb)
+    except:
+        return "<h2>❌ Wrong key</h2><a href='/'>Home</a>"
+
+    return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
 @app.route("/uploads/<filename>")
 def serve_file(filename):
