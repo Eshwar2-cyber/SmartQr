@@ -1,60 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Protected File</title>
-    <style>
-        body { font-family: Arial; text-align: center; background:#f9fafc; padding: 50px; }
-        .card { background:white; padding:40px; border-radius:15px; box-shadow:0 4px 15px rgba(0,0,0,0.1); display:inline-block; }
-        a{ background:#2563eb; color:white; padding:10px 20px; border-radius:8px; text-decoration:none; }
-        #expiredMsg { color:red; font-weight:bold; display:none; }
-        #countdown { font-weight:bold; margin-top:10px; }
-    </style>
+<meta charset="UTF-8">
+<title>File Page</title>
+<style>
+ body{text-align:center;font-family:Arial;padding:60px;background:#f9fafc}
+ .box{background:white;padding:25px;border-radius:10px;display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,.1)}
+</style>
 </head>
 <body>
-
-<div class="card">
-    <h2>🔒 Encrypted File</h2>
-
-    <p id="countdown"></p>
-    <p id="expiredMsg">❌ File expired and deleted</p>
-
-    <a id="unlockBtn" href="/unlock/{{ filename }}">Enter Key</a>
+<div class="box">
+  <h2>🔐 Encrypted File</h2>
+  <p>This file is encrypted. You must unlock it.</p>
+  <a href="/unlock/{{ filename }}" style="background:#2563eb;color:white;padding:10px 22px;border-radius:8px;text-decoration:none">Unlock</a>
+  <br><br>
+  <a href="/">🏠 Home</a>
 </div>
-
-<script>
-// ✅ FIX: wrap value in quotes
-const uploadedAt = "{{ uploaded_at }}";
-
-const countdown = document.getElementById("countdown");
-const expiredMsg = document.getElementById("expiredMsg");
-const unlockBtn = document.getElementById("unlockBtn");
-
-if (uploadedAt && uploadedAt !== "None") {
-
-    function update() {
-        const now = Date.now() / 1000;
-        const expire = parseFloat(uploadedAt) + 86400;
-        const remain = expire - now;
-
-        if (remain <= 0) {
-            countdown.style.display = "none";
-            unlockBtn.style.display = "none";
-            expiredMsg.style.display = "block";
-            return;
-        }
-
-        const h = Math.floor(remain / 3600);
-        const m = Math.floor((remain % 3600) / 60);
-        const s = Math.floor(remain % 60);
-
-        countdown.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
-    }
-
-    update();
-    setInterval(update, 1000);
-}
-</script>
-
 </body>
 </html>

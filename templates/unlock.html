@@ -1,28 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Unlock File</title>
-    <style>
-        body { font-family: Arial; text-align:center; background:#f9fafc; padding:40px; }
-        .card { background:white; padding:30px; border-radius:10px; display:inline-block; box-shadow:0 4px 15px rgba(0,0,0,0.1); }
-        input, button { padding:10px; margin-top:10px; width:250px; border-radius:6px; border:1px solid #aaa; }
-        button { background:#2563eb; color:white; border:none; cursor:pointer; }
-        button:hover { background:#1d4ed8; }
-    </style>
+  <meta charset="UTF-8">
+  <title>Unlock File</title>
+  <style>
+    body{font-family:Arial;text-align:center;background:#f9fafc;padding:40px}
+    .card{background:#fff;padding:30px;border-radius:10px;display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,.1)}
+    input,button{padding:10px;margin-top:10px;width:260px;border-radius:6px;border:1px solid #aaa}
+    button{background:#2563eb;color:white;border:none;cursor:pointer}
+    .error{color:red;margin-top:10px;font-weight:bold}
+  </style>
 </head>
 <body>
-
 <div class="card">
-    <h2>🔓 Unlock File</h2>
-    <form method="POST" action="/decrypt/{{ filename }}">
-        <input type="text" name="key" placeholder="Enter Key" required><br>
-        <button type="submit">Unlock & Download</button>
-    </form>
+  <h2>🔓 Unlock File</h2>
+  <form method="POST" action="/decrypt/{{ filename }}">
+    <input type="text" name="key" placeholder="Enter Key" required><br>
+    <button type="submit">Unlock</button>
+  </form>
 
-    <br>
-    <a href="/">🏠 Home</a>
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <br><a href="/">🏠 Home</a>
 </div>
-
 </body>
 </html>

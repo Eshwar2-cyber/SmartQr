@@ -1,60 +1,33 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>QR Generated</title>
-    <style>
-        body { font-family: Arial; text-align: center; background: #f9fafc; padding: 50px; }
-        .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; }
-        a, button { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; margin-top: 15px; display: inline-block; border: none; cursor: pointer; }
-        button:hover, a:hover { background: #1d4ed8; }
-        .key-box { display:flex; background:#f3f4f6; padding:10px; border-radius:8px; border:1px solid #ddd; gap:10px; align-items:center; justify-content:center; word-break: break-all; }
-        .copy-btn { background:#059669; }
-        #warn { color:red; }
-    </style>
+<meta charset="UTF-8">
+<title>QR Generated</title>
+<style>
+ body{text-align:center;font-family:Arial;padding:60px;background:#f9fafc}
+ .box{background:white;padding:25px;border-radius:10px;display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,.1)}
+ button,a{text-decoration:none;color:white;background:#2563eb;padding:10px 22px;border-radius:8px;margin-top:10px;display:inline-block;border:none}
+ .copy{background:#059669}
+</style>
 </head>
 <body>
+<div class="box">
+  <h2>✅ QR Created</h2>
+  <img src="{{ url_for('static', filename='qrcodes/' + filename + '_qr.png') }}" width="240">
 
-<div class="card">
-    <h2>✅ QR Code Generated</h2>
+  <p><b>Key (Save it!)</b></p>
+  <div id="k">{{ sessionStorage.last_key }}</div>
 
-    <!-- ✅ FIXED QR ALWAYS SHOWS -->
-    <img src="{{ url_for('static', filename='qrcodes/' + qr_image) }}" width="230" alt="QR Code">
-
-    <div class="key-box" id="keyRow" style="display:none;">
-        <span id="keyText"></span>
-        <button class="copy-btn" id="copyBtn">Copy</button>
-    </div>
-
-    <p id="warn" style="display:none;">⚠️ Save this key — it won't show again.</p>
-
-    <a href="{{ public_link }}" target="_blank">View File Page</a><br>
-    <button onclick="shareFile()">🔗 Share</button><br>
-    <a href="/">🏠 Home</a>
+  <button class="copy" onclick="copyKey()">Copy Key</button><br>
+  <a href="/view/{{ filename }}">View File Page</a><br>
+  <a href="/">Home</a>
 </div>
 
 <script>
-const key = sessionStorage.getItem("last_upload_key");
-if (key) {
-    keyRow.style.display = "flex";
-    keyText.textContent = key;
-    warn.style.display = "block";
+function copyKey(){
+  navigator.clipboard.writeText(sessionStorage.getItem("last_key"));
+  alert("Copied!");
 }
-copyBtn.onclick = () => navigator.clipboard.writeText(key);
-
-function shareFile() {
-    if (navigator.share) {
-        navigator.share({
-            text: "Download using this link and key:\n{{ public_link }}\nKey: " + key,
-            url: "{{ public_link }}"
-        });
-    } else {
-        alert("Sharing not supported");
-    }
-}
-
-window.addEventListener("beforeunload", ()=>sessionStorage.removeItem("last_upload_key"));
 </script>
-
 </body>
 </html>
