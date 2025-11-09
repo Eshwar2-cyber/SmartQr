@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, send_file, jsonify
-import os, qrcode, time, threading, shutil, json
+import os, qrcode, time, threading, shutil, json, base64
 from werkzeug.utils import secure_filename
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 app = Flask(__name__)
 
@@ -26,7 +26,7 @@ CHUNK_SIZE = 4 * 1024 * 1024
 
 
 # ==========================
-# Home
+# Home Page
 # ==========================
 @app.route("/")
 def home():
@@ -58,7 +58,7 @@ def upload_chunk():
 
 
 # ==========================
-# Stream Encrypt
+# Encrypt Stream
 # ==========================
 def encrypt_file_stream(in_path, out_path, key):
     cipher = Fernet(key)
@@ -73,7 +73,26 @@ def encrypt_file_stream(in_path, out_path, key):
 
 
 # ==========================
-# Finish → Encrypt → Save QR
+# ✅ Decrypt Stream (FIXED)
+# ==========================
+def decrypt_file_stream(in_path, out_path, key):
+    cipher = Fernet(key)
+    with open(in_path, "rb") as fin, open(out_path, "wb") as fout:
+        while True:
+            len_bytes = fin.read(4)
+            if not len_bytes:
+                break
+            
+            size = int.from_bytes(len_bytes, "big")
+            token = fin.read(size)
+
+            # If wrong key → InvalidToken
+            chunk = cipher.decrypt(token)
+            fout.write(chunk)
+
+
+# ==========================
+# Finish Upload → Encrypt → QR
 # ==========================
 @app.route("/finish_upload")
 def finish_upload():
@@ -90,7 +109,6 @@ def finish_upload():
         final_path = os.path.join(UPLOAD_FOLDER, safe_name)
         part_files = sorted(f for f in os.listdir(folder) if f.endswith(".part"))
 
-        # Merge chunks
         with open(final_path, "wb") as out:
             for part in part_files:
                 with open(os.path.join(folder, part), "rb") as c:
@@ -98,7 +116,6 @@ def finish_upload():
 
         shutil.rmtree(folder, ignore_errors=True)
 
-        # Encrypt
         key = Fernet.generate_key()
         encrypted_path = os.path.join(ENCRYPTED_FOLDER, safe_name)
         encrypt_file_stream(final_path, encrypted_path, key)
@@ -108,7 +125,6 @@ def finish_upload():
 
         os.remove(final_path)
 
-        # ✅ Create QR correctly
         qr_filename = f"{safe_name}_qr.png"
         qr_path = os.path.join(QR_FOLDER, qr_filename)
         qrcode.make(f"{PUBLIC_BASE}/view/{safe_name}").save(qr_path)
@@ -125,7 +141,7 @@ def finish_upload():
 
 
 # ==========================
-# View File Page
+# View Page
 # ==========================
 @app.route("/view/<filename>")
 def view_file(filename):
@@ -153,7 +169,7 @@ def unlock(filename):
 
 
 # ==========================
-# Decrypt
+# ✅ Decrypt FIXED
 # ==========================
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt_file(filename):
@@ -161,22 +177,33 @@ def decrypt_file(filename):
     if not os.path.exists(encrypted_path):
         return render_template("404.html", filename=filename)
 
-    key = request.form.get("key")
+    key = request.form.get("key", "").strip()
+
+    # Validate key format
+    try:
+        base64.urlsafe_b64decode(key.encode())
+    except:
+        return "<h2>❌ Invalid Key format.</h2><a href='/'>Home</a>"
+
     try:
         decrypted_path = os.path.join(UPLOAD_FOLDER, filename)
         decrypt_file_stream(encrypted_path, decrypted_path, key.encode())
+
         return send_file(decrypted_path, as_attachment=True)
-    except:
-        return "<h2>❌ Wrong Key</h2><a href='/'>Home</a>"
+
+    except InvalidToken:
+        return "<h2>❌ Wrong Key.</h2><a href='/'>Home</a>"
+    except Exception as e:
+        return f"<h2>❌ Error: {e}</h2><a href='/'>Home</a>"
 
 
 # ==========================
-# ✅ SUCCESS PAGE (QR ALWAYS WORKS)
+# Success Page
 # ==========================
 @app.route("/success/<filename>")
 def success_page(filename):
     safe = secure_filename(filename)
-    qr_image = f"{safe}_qr.png"  # ✅ correct QR filename
+    qr_image = f"{safe}_qr.png"
     return render_template(
         "success.html",
         filename=safe,
@@ -186,7 +213,7 @@ def success_page(filename):
 
 
 # ==========================
-# Auto Cleanup
+# Cleanup
 # ==========================
 def cleanup_worker():
     while True:
