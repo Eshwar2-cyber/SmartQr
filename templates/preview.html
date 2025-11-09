@@ -50,7 +50,7 @@ async function startUpload() {
     const file = fileInput.files[0];
     if (!file) return alert("Select a file first!");
 
-    const chunkSize = 10 * 1024 * 1024; // 10MB
+    const chunkSize = 2 * 1024 * 1024; // ✅ 2MB chunks (fixed)
     const totalChunks = Math.ceil(file.size / chunkSize);
     const fileId = Date.now().toString();
     const encodedName = encodeURIComponent(file.name);
@@ -68,12 +68,19 @@ async function startUpload() {
         form.append("file_id", fileId);
         form.append("filename", file.name);
         form.append("index", i);
-        form.append("total", totalChunks);
 
-        await fetch(`${window.location.origin}/upload_chunk`, {
-            method: "POST",
-            body: form
-        });
+        // ✅ Retry chunk upload if network issue
+        let ok = false;
+        for (let attempt = 0; attempt < 5; attempt++) {
+            try {
+                await fetch(`/upload_chunk`, { method: "POST", body: form });
+                ok = true;
+                break;
+            } catch {
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+        if (!ok) return alert("❌ Network error. Try again.");
 
         uploaded++;
         let percent = Math.round((uploaded / totalChunks) * 100);
@@ -83,27 +90,31 @@ async function startUpload() {
         let speed = uploaded / elapsed;
         let remain = (totalChunks - uploaded) / speed;
 
-        etaText.textContent = `⏳ ${percent}% uploaded — Est. time: ${remain.toFixed(1)}s`;
+        etaText.textContent = `⏳ ${percent}% uploaded — Est: ${remain.toFixed(1)}s`;
+
+        // ✅ small pause avoids timeout on Render free tier
+        await new Promise(r => setTimeout(r, 20));
     }
 
-    // ✅ Safe request for finish
-    const fin = await fetch(`${window.location.origin}/finish_upload?file_id=${fileId}&filename=${encodedName}`);
-    
-    let data;
-    try {
-        data = await fin.json();
-    } catch (e) {
-        const text = await fin.text().catch(() => "");
-        return alert(`❌ Server error (${fin.status}). ${text.slice(0,100)}`);
+    // ✅ finish_upload with retry
+    let data = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+            const res = await fetch(`/finish_upload?file_id=${fileId}&filename=${encodedName}`);
+            data = await res.json();
+            break;
+        } catch {
+            await new Promise(r => setTimeout(r, 2000));
+        }
     }
 
-    if (data.status !== "ok") {
-        return alert("❌ Error: " + (data.error || "QR generation failed"));
+    if (!data || data.status !== "ok") {
+        return alert("❌ Server timeout. Try again.");
     }
 
     sessionStorage.setItem("last_upload_key", data.key);
-    etaText.textContent = "✅ Upload complete! Generating QR…";
 
+    etaText.textContent = "✅ Upload complete!";
     window.location.href = `/success/${encodedName}`;
 }
 </script>
