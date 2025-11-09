@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
 <title>Image Preview</title>
 <style>
-body{text-align:center;font-family:Arial;padding-top:60px;background:#f7f9ff}
-img{max-width:90%;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,.2)}
-a{display:block;margin-top:20px;padding:10px 20px;background:#2563eb;color:white;border-radius:8px;text-decoration:none}
+  body{text-align:center;background:#fafafa;padding-top:50px;font-family:Arial}
+  img{max-width:90%;border-radius:10px;box-shadow:0 5px 15px rgba(0,0,0,.12)}
+  a{display:block;margin-top:20px;background:#2563eb;color:white;padding:10px 20px;border-radius:8px;text-decoration:none}
 </style>
 </head>
 <body>
 <h2>✅ Image Decrypted</h2>
 <img src="{{ image }}">
-<a href="{{ image }}" download>Download Image</a>
+<a href="{{ image }}" download>Download</a>
+<a href="/">🏠 Home</a>
 </body>
 </html>

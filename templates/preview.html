@@ -36,24 +36,39 @@ const progress = document.getElementById("progress");
 const progressBar = document.getElementById("progressBar");
 const etaText = document.getElementById("eta");
 
+// ✅ CHUNK SIZE 1MB (safer)
+const chunkSize = 1 * 1024 * 1024;
+
 fileInput.addEventListener("change",()=>{
   if(fileInput.files.length)
     fileName.innerHTML = "✅ Selected: " + fileInput.files[0].name;
 });
 
+async function uploadChunk(fd) {
+  while(true){
+    try {
+      const r = await fetch("/upload_chunk",{method:"POST",body:fd});
+      if(r.ok) return; // success
+    } catch(e){
+      console.log("Retrying...");
+    }
+    // 🔁 wait 2 sec & retry
+    await new Promise(res=>setTimeout(res,2000));
+  }
+}
+
 async function startUpload(){
   const file = fileInput.files[0];
   if(!file) return alert("Select a file first!");
 
-  const chunkSize = 4 * 1024 * 1024; 
   const totalChunks = Math.ceil(file.size / chunkSize);
   const fileId = Date.now().toString();
 
   progressBar.style.display = "block";
   let uploaded = 0;
-  let started = Date.now();
+  let startTime = Date.now();
 
-  for(let i=0;i<totalChunks;i++){
+  for(let i=0; i<totalChunks; i++){
     const start = i * chunkSize;
     const chunk = file.slice(start, start + chunkSize);
 
@@ -63,29 +78,28 @@ async function startUpload(){
     form.append("filename", file.name);
     form.append("index", i);
 
-    await fetch("/upload_chunk",{method:"POST",body:form});
+    await uploadChunk(form); // ✅ auto retry & resume
 
     uploaded++;
     const percent = Math.round((uploaded/totalChunks)*100);
     progress.style.width = percent + "%";
 
-    let elapsed = (Date.now() - started) / 1000;
+    let elapsed = (Date.now() - startTime)/1000;
     let speed = uploaded / elapsed;
     let remain = (totalChunks - uploaded) / speed;
     etaText.innerHTML = `⏳ ${percent}% — Est time: ${remain.toFixed(1)}s`;
   }
 
-  const res = await fetch(`/finish_upload?file_id=${fileId}&filename=${encodeURIComponent(file.name)}`);
-  const data = await res.json();
+  // ✅ tell server to merge & encrypt
+  const resp = await fetch(`/finish_upload?file_id=${fileId}&filename=${encodeURIComponent(file.name)}`);
+  const data = await resp.json();
 
   if(data.status !== "ok"){
-    return alert("❌ Server error: " + (data.error || "unknown"));
+    return alert("❌ Server Error: " + (data.error || "unknown"));
   }
 
-  etaText.innerHTML = "✅ Upload Complete! Redirecting...";
-
-  // ✅ FIXED REDIRECT WITH KEY
-  window.location.href = `/success/${encodeURIComponent(data.filename)}?key=${encodeURIComponent(data.key)}`;
+  etaText.innerHTML = "✅ Upload complete! Redirecting...";
+  window.location.href = `/success/${encodeURIComponent(file.name)}?key=${data.key}`;
 }
 </script>
 
