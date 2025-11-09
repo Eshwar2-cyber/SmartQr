@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, send_file
-import os, time, shutil, json, qrcode, threading
+import os, time, shutil, json, qrcode, threading, base64
 from werkzeug.utils import secure_filename
-from cryptography.fernet import Fernet
+from Cryptodome.Cipher import AES  # <= PyCryptodome (wheel-only)
 
 app = Flask(__name__)
 
@@ -16,6 +16,60 @@ for f in [UPLOAD, ENCRYPT, QRFOLDER, CHUNKS]:
 
 PUBLIC = "https://smartqr-pe0z.onrender.com"
 CHUNK_SIZE = 4 * 1024 * 1024  # 4MB safe chunks
+
+# ----- Simple helpers to encode/decode the binary key as a URL-safe string -----
+def make_key() -> str:
+    key = os.urandom(32)  # 256-bit key
+    return base64.urlsafe_b64encode(key).decode()
+
+def parse_key(key_str: str) -> bytes:
+    return base64.urlsafe_b64decode(key_str.encode())
+
+# We will write each encrypted chunk as: [nonce(16)][tag(16)][len(4)][ciphertext]
+NONCE_LEN = 16
+TAG_LEN = 16
+
+def encrypt_file_stream(in_path: str, out_path: str, key_b: bytes):
+    with open(in_path, "rb") as fin, open(out_path, "wb") as fout:
+        while True:
+            data = fin.read(CHUNK_SIZE)
+            if not data:
+                break
+            cipher = AES.new(key_b, AES.MODE_EAX)  # generates fresh nonce
+            ciphertext, tag = cipher.encrypt_and_digest(data)
+
+            # write nonce + tag + length + ciphertext
+            fout.write(cipher.nonce)                     # 16 bytes
+            fout.write(tag)                              # 16 bytes
+            fout.write(len(ciphertext).to_bytes(4, "big"))
+            fout.write(ciphertext)
+
+def decrypt_file_stream(in_path: str, out_path: str, key_b: bytes):
+    with open(in_path, "rb") as fin, open(out_path, "wb") as fout:
+        while True:
+            nonce = fin.read(NONCE_LEN)
+            if not nonce:
+                break
+            if len(nonce) != NONCE_LEN:
+                raise ValueError("Corrupt file (nonce)")
+            tag = fin.read(TAG_LEN)
+            if len(tag) != TAG_LEN:
+                raise ValueError("Corrupt file (tag)")
+            sizeb = fin.read(4)
+            if len(sizeb) != 4:
+                raise ValueError("Corrupt file (length)")
+            size = int.from_bytes(sizeb, "big")
+            ciphertext = fin.read(size)
+            if len(ciphertext) != size:
+                raise ValueError("Corrupt file (ciphertext)")
+
+            cipher = AES.new(key_b, AES.MODE_EAX, nonce=nonce)
+            plaintext = cipher.decrypt(ciphertext)
+            # verify tag (raises ValueError if wrong)
+            cipher.verify(tag)
+            fout.write(plaintext)
+
+# ================= ROUTES =================
 
 @app.route("/")
 def index():
@@ -52,6 +106,7 @@ def finish_upload():
     final_path = os.path.join(UPLOAD, filename)
     parts = sorted([f for f in os.listdir(folder) if f.endswith(".part")])
 
+    # merge chunks
     with open(final_path, "wb") as out:
         for p in parts:
             with open(os.path.join(folder, p), "rb") as ch:
@@ -59,20 +114,11 @@ def finish_upload():
 
     shutil.rmtree(folder, ignore_errors=True)
 
-    # ENCRYPT STREAM
-    key = Fernet.generate_key()
-    cipher = Fernet(key)
-
+    # ENCRYPT STREAM (PyCryptodome)
+    key_str = make_key()
+    key_b = parse_key(key_str)
     encrypted_path = os.path.join(ENCRYPT, filename)
-
-    with open(final_path, "rb") as fin, open(encrypted_path, "wb") as fout:
-        while True:
-            data = fin.read(CHUNK_SIZE)
-            if not data:
-                break
-            token = cipher.encrypt(data)
-            fout.write(len(token).to_bytes(4, "big"))
-            fout.write(token)
+    encrypt_file_stream(final_path, encrypted_path, key_b)
 
     # Save meta time
     with open(encrypted_path + ".meta", "w") as f:
@@ -87,7 +133,7 @@ def finish_upload():
 
     return jsonify({
         "status": "ok",
-        "key": key.decode(),
+        "key": key_str,         # urlsafe base64
         "qr": qr_name,
         "filename": filename,
         "public": link
@@ -114,26 +160,29 @@ def unlock(filename):
 # ✅ DECRYPT STREAM & PREVIEW
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt(filename):
-    key = request.form.get("key")
+    key_str = request.form.get("key")
     enc = os.path.join(ENCRYPT, filename)
 
     if not os.path.exists(enc):
         return render_template("404.html")
 
+    # parse key string back to bytes
     try:
-        cipher = Fernet(key.encode())
-    except:
-        return "<h2>❌ Invalid key</h2><a href='/'>Home</a>"
+        key_b = parse_key(key_str)
+    except Exception:
+        return "<h2>❌ Invalid key format</h2><a href='/'>Home</a>"
 
     dec = os.path.join(UPLOAD, filename)
-    with open(enc, "rb") as fin, open(dec, "wb") as fout:
-        while True:
-            sizeb = fin.read(4)
-            if not sizeb:
-                break
-            size = int.from_bytes(sizeb, "big")
-            token = fin.read(size)
-            fout.write(cipher.decrypt(token))
+    try:
+        decrypt_file_stream(enc, dec, key_b)
+    except Exception:
+        # wrong key / tampered file / corrupt
+        if os.path.exists(dec):
+            try:
+                os.remove(dec)
+            except:
+                pass
+        return "<h2>❌ Wrong Key</h2><a href='/'>Home</a>"
 
     ext = filename.lower()
 
@@ -180,6 +229,6 @@ def success(filename):
         expires_in=expires_in
     )
 
-# ✅ RUN SERVER
+# ✅ RUN SERVER (local)
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
