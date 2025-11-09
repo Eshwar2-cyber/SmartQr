@@ -1,45 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>View File</title>
-<style>
-body{text-align:center;font-family:Arial;background:#f5f7ff;padding:60px}
-.card{background:#fff;padding:24px;border-radius:10px;display:inline-block;width:330px;box-shadow:0 4px 15px rgba(0,0,0,.15)}
-img{width:200px;margin:15px;border-radius:8px}
-.btn{padding:10px 18px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;display:block;margin:10px auto;width:240px}
-.timer{margin-top:8px;font-size:14px;color:#444}
-</style>
+    <meta charset="UTF-8">
+    <title>Encrypted File</title>
+    <style>
+        body { font-family: Arial, sans-serif; background:#f9fafc; text-align:center; padding-top:80px; }
+        .card {
+            background:white; padding:35px; border-radius:12px;
+            display:inline-block; box-shadow:0 6px 20px rgba(0,0,0,0.08);
+            width:340px;
+        }
+        a.btn {
+            display:inline-block; width:100%; margin-top:15px; padding:12px;
+            background:#2563eb; color:#fff; text-decoration:none; border-radius:8px;
+        }
+        a.btn:hover { background:#1d4ed8; }
+        .muted { color:#374151; font-size:14px; margin-top:10px; }
+    </style>
 </head>
 <body>
 
 <div class="card">
-  <h2>🔐 Secure File Available</h2>
+    <h2>🔒 File is Protected</h2>
+    <p>You must enter the decryption key to unlock.</p>
 
-  <img src="/static/qrcodes/{{ filename }}_qr.png">
+    <a class="btn" href="/unlock/{{ filename }}">Enter Key</a>
 
-  <p><b>Expires In:</b> <span id="time"></span></p>
-
-  <a class="btn" href="/unlock/{{ filename }}">Unlock & View</a>
-  <a class="btn" style="background:#222" href="/">Home</a>
+    {% if countdown %}
+    <p class="muted">⏳ Expires in <span id="count"></span></p>
+    {% endif %}
 </div>
 
 <script>
-let remain = Number("{{ countdown }}") || 0;
-
-function tick(){
-  if(remain <= 0){
-    document.getElementById("time").innerText = "Expired";
-    return;
-  }
-  let h = Math.floor(remain/3600);
-  let m = Math.floor((remain%3600)/60);
-  let s = remain % 60;
-  document.getElementById("time").innerText = `${h}h ${m}m ${s}s`;
-  remain--;
+// prevents vscode errors
+{% if countdown %}
+let t = {{ countdown }};
+function timer(){
+    const el = document.getElementById("count");
+    if(t <= 0){ el.textContent = "Expired"; return; }
+    const h = Math.floor(t/3600);
+    const m = Math.floor((t%3600)/60);
+    const s = t%60;
+    el.textContent = `${h}h ${m}m ${s}s`;
+    t--;
 }
-tick();
-setInterval(tick,1000);
+timer();
+setInterval(timer,1000);
+{% endif %}
 </script>
 
 </body>

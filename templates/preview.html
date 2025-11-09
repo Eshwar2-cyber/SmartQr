@@ -45,7 +45,7 @@ async function startUpload(){
   const file = fileInput.files[0];
   if(!file) return alert("Select a file first!");
 
-  const chunkSize = 4 * 1024 * 1024; // 4MB each
+  const chunkSize = 4 * 1024 * 1024; 
   const totalChunks = Math.ceil(file.size / chunkSize);
   const fileId = Date.now().toString();
 
@@ -75,7 +75,6 @@ async function startUpload(){
     etaText.innerHTML = `⏳ ${percent}% — Est time: ${remain.toFixed(1)}s`;
   }
 
-  // ✅ Finish on server
   const res = await fetch(`/finish_upload?file_id=${fileId}&filename=${encodeURIComponent(file.name)}`);
   const data = await res.json();
 
@@ -83,10 +82,10 @@ async function startUpload(){
     return alert("❌ Server error: " + (data.error || "unknown"));
   }
 
-  sessionStorage.setItem("last_upload_key", data.key);
   etaText.innerHTML = "✅ Upload Complete! Redirecting...";
 
-  window.location.href = `/success/${encodeURIComponent(file.name)}`;
+  // ✅ FIXED REDIRECT WITH KEY
+  window.location.href = `/success/${encodeURIComponent(data.filename)}?key=${encodeURIComponent(data.key)}`;
 }
 </script>
 

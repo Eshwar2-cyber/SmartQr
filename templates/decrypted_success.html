@@ -1,14 +1,30 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>Decrypted</title>
+<meta charset="UTF-8">
+<title>File Ready</title>
 <style>
-body{text-align:center;font-family:Arial;padding-top:80px}
-a{padding:10px 20px;background:#2563eb;color:white;border-radius:6px;text-decoration:none}
+    body { font-family: Arial; text-align:center; background:#f4f6fb; padding-top:80px; }
+    .card {
+        background:white; padding:40px; border-radius:12px;
+        box-shadow:0 6px 20px rgba(0,0,0,0.08); display:inline-block; width:400px;
+    }
+    a.btn {
+        display:block; background:#2563eb; padding:12px; border-radius:8px;
+        margin-top:20px; color:white; text-decoration:none;
+    }
+    a.btn:hover { background:#1d4ed8; }
 </style>
 </head>
 <body>
-<h2>✅ Decryption Completed</h2>
-<a href="{{ link }}" download>Download File</a>
+
+<div class="card">
+    <h2>✅ File Decrypted!</h2>
+    <p>Your file is ready to view or download.</p>
+
+    <a class="btn" href="{{ link }}" target="_blank">Open File</a>
+    <a class="btn" href="/">🏠 Home</a>
+</div>
+
 </body>
 </html>

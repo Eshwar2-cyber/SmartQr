@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, send_file, jsonify
-import os, qrcode, base64, time, threading, shutil, json
+import os, qrcode, base64, time, shutil, json
 from werkzeug.utils import secure_filename
 from Cryptodome.Cipher import AES
 
@@ -15,9 +15,8 @@ for f in [UPLOAD, ENCRYPT, QRFOLDER, CHUNKS]:
     os.makedirs(f, exist_ok=True)
 
 PUBLIC = "https://smartqr-oyjd.onrender.com"
-CHUNK_SIZE = 4 * 1024 * 1024  # 4MB
+CHUNK_SIZE = 4 * 1024 * 1024
 
-# ------ key helpers ------
 def make_key():
     return base64.urlsafe_b64encode(os.urandom(32)).decode()
 
@@ -55,12 +54,10 @@ def decrypt_stream(src, dst, keyb):
             cipher.verify(tag)
             fout.write(pt)
 
-# HOME
 @app.route("/")
 def index():
     return render_template("preview.html")
 
-# ---- chunk upload ----
 @app.route("/upload_chunk", methods=["POST"])
 def upload_chunk():
     file_id = request.form["file_id"]
@@ -127,7 +124,7 @@ def success(filename):
     return render_template(
         "success.html",
         filename=filename,
-        qr_image=qr,
+        qr_image=qr + "?v=" + str(time.time()),
         public_link=public_link,
         key=key,
         expires_in=expires
@@ -139,7 +136,13 @@ def view(filename):
     if not os.path.exists(enc):
         return render_template("404.html")
 
-    return render_template("view.html", filename=filename)
+    countdown = None
+    meta = os.path.join(ENCRYPT, filename + ".meta")
+    if os.path.exists(meta):
+        data = json.load(open(meta))
+        countdown = max(0, int((data["time"] + 86400) - time.time()))
+
+    return render_template("view.html", filename=filename, countdown=countdown)
 
 @app.route("/unlock/<filename>")
 def unlock(filename):

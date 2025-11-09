@@ -1,44 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>QR Generated</title>
-    <style>
-        body { font-family: Arial; text-align: center; background: #f9fafc; padding: 50px; }
-        .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; }
-        img { width: 250px; margin-top: 20px; }
-        a { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; display: inline-block; margin-top: 15px; }
-        .key-box { background: #f3f4f6; border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-top: 15px; word-break: break-all; }
-    </style>
+  <meta charset="UTF-8" />
+  <title>QR Generated</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f9fafc; padding: 50px; }
+    .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; max-width: 520px; width: 100%; }
+    img.qr { width: 250px; height: auto; margin-top: 20px; border-radius: 8px;}
+    .btn { text-decoration:none; color:white; background:#2563eb; padding:10px 25px; border-radius:8px; display:inline-block; margin-top:10px; cursor:pointer; border:none;}
+    .btn:hover { background:#1d4ed8; }
+    .key-box { background:#e6fdf0; border:1px solid #10b981; color:#065f46; border-radius:8px; padding:12px; margin-top:15px; font-family:monospace; font-size:15px; word-break:break-all; }
+    .row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:10px;}
+    .danger { color:#e11d48; font-size:14px;}
+    .muted { color:#374151; font-size:14px; margin-top:10px;}
+  </style>
 </head>
 <body>
-    <div class="card">
-        <h2>✅ QR Code & Key Generated!</h2>
-        <img src="/static/qrcodes/{{ qr_image }}" alt="QR Code">
+  <div class="card">
+    <h2>✅ QR Code & Key Generated!</h2>
 
-        <div class="key-box"><strong>Your Key:</strong><br>{{ key }}</div>
-        <p style="color:red;font-size:14px;">⚠️ Save this key — it won't show again.</p>
+    <!-- ✅ Cache-busted QR so it never breaks -->
+    <img class="qr" src="{{ url_for('static', filename='qrcodes/' + qr_image) }}?v={{ expires_in }}" alt="QR Code">
 
-        {% if expires_in %}
-        <p>⏳ Expires in: <span id="exp"></span></p>
-        {% endif %}
+    <div class="key-box" id="keyBox">{{ key }}</div>
 
-        <a href="{{ public_link }}">View File Page</a><br><br>
-        <a href="/">🏠 Home</a>
+    <div class="row">
+      <button class="btn" onclick="copyKey()">Copy Key</button>
+      <button class="btn" onclick="shareLink()">Share Link + Key</button>
+      <a class="btn" href="{{ public_link }}" target="_blank">Open File Page</a>
     </div>
 
+    <p class="danger">⚠️ Save this key — it won't show again.</p>
+
+    {% if expires_in is not none %}
+      <p class="muted">⏳ Expires in <span id="count"></span></p>
+    {% endif %}
+
+    <a class="btn" href="/">🏠 Home</a>
+  </div>
+
 <script>
-{% if expires_in %}
-    let t = {{ expires_in }};
-    function timer(){
-        if(t<=0){ document.getElementById("exp").innerHTML="Expired"; return; }
-        const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
-        document.getElementById("exp").innerHTML=`${h}h ${m}m ${s}s`;
-        t--;
+  const link = "{{ public_link }}";
+  const key = "{{ key }}";
+
+  function copyKey(){
+    navigator.clipboard.writeText(key);
+    alert("✅ Key Copied");
+  }
+
+  function shareLink(){
+    const text = `Download File:\n${link}\nKey: ${key}`;
+    if(navigator.share){
+      navigator.share({ text:text, url:link });
+    } else {
+      navigator.clipboard.writeText(text);
+      alert("✅ Link & Key Copied to Clipboard");
     }
-    timer();
-    setInterval(timer, 1000);
-{% endif %}
+  }
+
+  {% if expires_in is not none %}
+  let t = {{ expires_in }};
+  function timer(){
+    if(t <= 0){
+      document.getElementById("count").innerHTML = "Expired";
+      return;
+    }
+    const h = Math.floor(t/3600),
+          m = Math.floor((t%3600)/60),
+          s = t%60;
+    document.getElementById("count").innerHTML = `${h}h ${m}m ${s}s`;
+    t--;
+  }
+  timer();
+  setInterval(timer, 1000);
+  {% endif %}
 </script>
 
 </body>
