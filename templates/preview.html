@@ -69,7 +69,10 @@ async function startUpload() {
         form.append("index", i);
         form.append("total", totalChunks);
 
-        await fetch("/upload_chunk", { method: "POST", body: form });
+        await fetch(`${window.location.origin}/upload_chunk`, { 
+            method: "POST", 
+            body: form 
+        });
 
         uploaded++;
         let percent = Math.round((uploaded / totalChunks) * 100);
@@ -79,16 +82,29 @@ async function startUpload() {
         let speed = uploaded / elapsed;
         let remain = (totalChunks - uploaded) / speed;
 
-        etaText.textContent =
-            `⏳ ${percent}% uploaded — Est. time: ${remain.toFixed(1)}s`;
+        etaText.textContent = `⏳ ${percent}% uploaded — Est. time: ${remain.toFixed(1)}s`;
     }
 
-    const fin = await fetch(`/finish_upload?file_id=${fileId}&filename=${file.name}`);
-    const data = await fin.json();
+    // ✅ Finish Upload -> Create QR internally
+    const fin = await fetch(`${window.location.origin}/finish_upload?file_id=${fileId}&filename=${file.name}`);
+    
+    let data;
+    try {
+        data = await fin.json();
+    } catch (e) {
+        return alert("❌ Server error, QR could not be generated.");
+    }
 
+    if (data.status !== "ok") {
+        return alert("❌ Error from server: " + (data.error || "unknown"));
+    }
+
+    // ✅ Save key for success page (if needed)
     sessionStorage.setItem("last_upload_key", data.key);
 
     etaText.textContent = "✅ Upload complete! Generating QR…";
+
+    // ✅ Redirect to success page
     window.location.href = `/success/${encodeURIComponent(file.name)}`;
 }
 </script>
