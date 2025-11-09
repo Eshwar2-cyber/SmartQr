@@ -1,39 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>File Ready</title>
+<title>Decrypted</title>
 <style>
- body{text-align:center;font-family:Arial;padding:60px;background:#f9fafc}
- img,video{max-width:90%;border-radius:10px;margin:15px 0}
- button,a{background:#2563eb;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;border:none;cursor:pointer}
+body{text-align:center;font-family:Arial;padding-top:80px}
+a{padding:10px 20px;background:#2563eb;color:white;border-radius:6px;text-decoration:none}
 </style>
 </head>
 <body>
-
-<h2>✅ File Decrypted</h2>
-
-{% if preview_type == "image" %}
-<img src="/download/{{ filename }}">
-
-{% elif preview_type == "video" %}
-<video controls src="/download/{{ filename }}"></video>
-
-{% elif preview_type == "pdf" %}
-<embed src="/download/{{ filename }}" width="90%" height="600px"/>
-
-{% elif preview_type == "text" %}
-<pre style="text-align:left;background:#eee;padding:15px;width:70%;margin:auto">
-{{ open('uploads/' + filename).read() }}
-</pre>
-
-{% else %}
-<p>File ready for download.</p>
-{% endif %}
-
-<br>
-<a href="/download/{{ filename }}">⬇ Download File</a><br><br>
-<a href="/">🏠 Home</a>
-
+<h2>✅ Decryption Completed</h2>
+<a href="{{ link }}" download>Download File</a>
 </body>
 </html>

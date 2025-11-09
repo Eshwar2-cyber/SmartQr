@@ -1,22 +1,54 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>SmartQR</title>
-<style>
-  body{font-family:Arial;text-align:center;padding-top:100px;background:#f9fafc}
-  a{background:#2563eb;color:white;padding:12px 24px;border-radius:8px;text-decoration:none}
-</style>
+  <title>SmartQR Upload</title>
+  <style>
+    body{font-family:Arial;text-align:center;background:#f4f7ff;padding-top:80px}
+    .card{background:white;padding:30px;border-radius:10px;display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,.1);width:350px}
+    input[type=file],button{margin-top:15px;width:100%;padding:12px;border-radius:6px;border:1px solid #aaa}
+    button{background:#2563eb;color:#fff;border:none;cursor:pointer}
+  </style>
 </head>
 <body>
-  <h1>📂 SmartQR File Share</h1>
-  <p>Upload and share encrypted files with QR</p>
+<h1>📂 SmartQR File Share</h1>
+<div class="card">
+  <input id="file" type="file"><br>
+  <button onclick="startUpload()">Upload</button>
 
-  <form action="/upload" method="post" enctype="multipart/form-data">
-    <input type="file" name="file" required><br><br>
-    <button type="submit">Upload</button>
-  </form><br>
+  <div id="status" style="margin-top:20px;font-weight:bold;"></div>
+  <div id="progress" style="margin-top:10px;"></div>
+</div>
 
-  <a href="/">🏠 Home</a>
+<script>
+const CHUNK = 4 * 1024 * 1024;
+
+async function startUpload(){
+  let file = document.getElementById("file").files[0];
+  if(!file){ alert("Select file"); return; }
+
+  let file_id = Date.now().toString();
+  let total_chunks = Math.ceil(file.size / CHUNK);
+
+  document.getElementById("status").innerHTML = "Uploading…";
+  
+  for(let i=0;i<total_chunks;i++){
+    let part = file.slice(i*CHUNK, (i+1)*CHUNK);
+    let fd = new FormData();
+    fd.append("file_id", file_id);
+    fd.append("filename", file.name);
+    fd.append("index", i);
+    fd.append("chunk", part);
+
+    await fetch("/upload_chunk", { method:"POST", body:fd });
+    document.getElementById("progress").innerHTML =
+      `Chunk ${i+1}/${total_chunks}`;
+  }
+
+  let r = await fetch(`/finish_upload?file_id=${file_id}&filename=${file.name}`);
+  let j = await r.json();
+
+  window.location = `/success/${j.filename}`;
+}
+</script>
 </body>
 </html>

@@ -15,7 +15,7 @@ for f in [UPLOAD, ENCRYPT, QRFOLDER, CHUNKS]:
     os.makedirs(f, exist_ok=True)
 
 PUBLIC = "https://smartqr-pe0z.onrender.com"
-CHUNK_SIZE = 4 * 1024 * 1024  # 4MB – safe
+CHUNK_SIZE = 4 * 1024 * 1024  # 4MB safe chunks
 
 @app.route("/")
 def index():
@@ -166,10 +166,9 @@ def success(filename):
     if os.path.exists(meta_path):
         try:
             data = json.load(open(meta_path))
-            uploaded_at = data.get("time") or data.get("uploaded_at")
-            ttl = data.get("ttl", 86400)  # default 24h
-            if uploaded_at:
-                expires_in = max(0, int((uploaded_at + ttl) - time.time()))
+            uploaded_at = data.get("time")
+            ttl = 86400  # 24h
+            expires_in = max(0, int((uploaded_at + ttl) - time.time()))
         except:
             expires_in = None
 
@@ -180,3 +179,7 @@ def success(filename):
         public=f"{PUBLIC}/view/{filename}",
         expires_in=expires_in
     )
+
+# ✅ RUN SERVER
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)

@@ -1,24 +1,46 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Unlock File</title>
-  <style>
-    body{font-family:Arial;text-align:center;background:#f9fafc;padding:50px}
-    .card{background:#fff;padding:30px;border-radius:10px;
-      display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,.1)}
-    input,button{padding:10px;width:260px;border-radius:6px;border:1px solid #aaa;margin-top:10px}
-    button{background:#2563eb;color:#fff;border:none}
-  </style>
+<meta charset="UTF-8">
+<title>View File</title>
+<style>
+body{text-align:center;font-family:Arial;background:#f5f7ff;padding:60px}
+.card{background:#fff;padding:24px;border-radius:10px;display:inline-block;width:330px;box-shadow:0 4px 15px rgba(0,0,0,.15)}
+img{width:200px;margin:15px;border-radius:8px}
+.btn{padding:10px 18px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;display:block;margin:10px auto;width:240px}
+.timer{margin-top:8px;font-size:14px;color:#444}
+</style>
 </head>
 <body>
+
 <div class="card">
-  <h2>🔓 Unlock File</h2>
-  <form method="POST" action="{{ url_for('unlock', filename=filename) }}">
-    <input type="text" name="key" placeholder="Enter Key" required><br>
-    <button type="submit">Unlock & Continue</button>
-  </form>
-  <br><a href="/">🏠 Home</a>
+  <h2>🔐 Secure File Available</h2>
+
+  <img src="/static/qrcodes/{{ filename }}_qr.png">
+
+  <p><b>Expires In:</b> <span id="time"></span></p>
+
+  <a class="btn" href="/unlock/{{ filename }}">Unlock & View</a>
+  <a class="btn" style="background:#222" href="/">Home</a>
 </div>
+
+<script>
+let remain = Number("{{ countdown }}") || 0;
+
+function tick(){
+  if(remain <= 0){
+    document.getElementById("time").innerText = "Expired";
+    return;
+  }
+  let h = Math.floor(remain/3600);
+  let m = Math.floor((remain%3600)/60);
+  let s = remain % 60;
+  document.getElementById("time").innerText = `${h}h ${m}m ${s}s`;
+  remain--;
+}
+tick();
+setInterval(tick,1000);
+</script>
+
 </body>
 </html>

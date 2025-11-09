@@ -2,133 +2,78 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>QR Ready</title>
+<title>Secure Upload Complete</title>
 <style>
-  :root { --brand:#2563eb; --ok:#059669; --bg:#f9fafc; --text:#0f172a; }
-  body{font-family:Arial, sans-serif;background:var(--bg);color:var(--text);text-align:center;padding:56px}
-  .card{background:#fff;padding:28px 28px 24px;border-radius:14px;display:inline-block;box-shadow:0 6px 28px rgba(0,0,0,.10);min-width:320px}
-  .qr-wrap{display:inline-block;padding:14px;border-radius:16px;position:relative;animation:pulse 2.2s ease-in-out infinite}
-  .qr{width:240px;height:auto;border-radius:10px;display:block}
-  @keyframes pulse {
-    0%{box-shadow:0 0 0 0 rgba(37,99,235,.35)}
-    70%{box-shadow:0 0 0 18px rgba(37,99,235,0)}
-    100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}
-  }
-  .row{display:flex;gap:10px;justify-content:center;align-items:center;margin-top:14px;flex-wrap:wrap}
-  .keybox{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;min-width:260px;text-align:left;word-break:break-all}
-  .btn{background:var(--brand);color:#fff;border:none;border-radius:8px;padding:10px 16px;cursor:pointer}
-  .btn.ok{background:var(--ok)}
-  .btn.ghost{background:#0ea5e9}
-  .link{display:inline-block;margin-top:10px;text-decoration:none;color:#fff;background:var(--brand);padding:10px 16px;border-radius:8px}
-  .muted{color:#475569;font-size:14px;margin-top:8px}
-  .count{font-weight:700}
-  .actions{margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-  /* Loader overlay */
-  .overlay{position:fixed;inset:0;background:rgba(15,23,42,.35);display:none;align-items:center;justify-content:center;z-index:50}
-  .spinner{width:44px;height:44px;border-radius:50%;border:4px solid #fff;border-top-color:var(--brand);animation:spin 1s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
+body{font-family:Arial;text-align:center;background:#f5f7ff;padding:50px}
+.card{background:#fff;padding:25px;border-radius:10px;display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,.15);width:340px}
+img{width:200px;margin-top:10px;border-radius:8px}
+.btn{display:block;margin:8px auto;padding:10px 18px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;width:240px;border:none;cursor:pointer}
+.copy{background:#10b981 !important}
+.share{background:#9333ea !important}
+.keybox{background:#111;color:#fff;padding:8px;border-radius:6px;margin:10px auto;width:240px;word-break:break-all;font-size:14px}
+.timer{font-size:14px;color:#555;margin-top:8px}
 </style>
 </head>
 <body>
 
 <div class="card">
-  <h2>✅ QR Code Generated</h2>
+  <h2>✅ Upload Finished</h2>
 
-  <div class="qr-wrap">
-    <img class="qr" src="{{ qr }}" alt="QR Code">
-  </div>
+  <img src="{{ qr }}">
 
-  <div class="row" style="margin-top:18px">
-    <div id="keyBox" class="keybox" style="display:none">
-      <b>Key:</b> <span id="keyText"></span>
-    </div>
-    <button id="copyBtn" class="btn ok" style="display:none">Copy Key</button>
-  </div>
+  <p><b>Encrypted File Link:</b></p>
+  <a class="btn" href="{{ public }}" target="_blank">Open Link</a>
+  <button class="btn copy" onclick="copyLink()">Copy File Link</button>
 
-  <p class="muted">⚠️ Save the key — without it the file cannot be unlocked.</p>
+  <p><b>Decryption Key:</b></p>
+  <div class="keybox" id="keyText">{{ request.args.get('key', session.get('key','NOT SHOWN')) }}</div>
+  <button class="btn copy" onclick="copyKey()">Copy Key</button>
 
-  <div class="actions">
-    <a class="link" href="{{ public }}" target="_blank">Open File Page</a>
-    <button id="shareBtn" class="btn ghost">Share</button>
-    <a class="btn" href="/">Home</a>
-  </div>
+  <a class="btn share" target="_blank"
+     href="https://wa.me/?text=Download%20encrypted%20file:%20{{ public }}">
+     Share on WhatsApp
+  </a>
 
-  {% if expires_in is not none %}
-  <p class="muted">⏳ Expires in: <span id="count" class="count"></span></p>
+  <a class="btn share" target="_blank"
+     href="https://t.me/share/url?url={{ public }}&text=Encrypted%20file">
+     Share on Telegram
+  </a>
+
+  {% if expires_in %}
+  <p class="timer">⏳ Expires in: <span id="time"></span></p>
   {% endif %}
-</div>
 
-<!-- Loader Overlay -->
-<div id="overlay" class="overlay">
-  <div class="spinner" aria-label="Loading"></div>
+  <a class="btn" style="background:#222" href="/">Home</a>
 </div>
 
 <script>
-  // read key from sessionStorage (set in preview.html after upload)
-  const key = sessionStorage.getItem("last_upload_key");
-  const keyBox = document.getElementById("keyBox");
-  const keyText = document.getElementById("keyText");
-  const copyBtn = document.getElementById("copyBtn");
-  const overlay = document.getElementById("overlay");
+function copyLink(){
+  navigator.clipboard.writeText("{{ public }}");
+  alert("✅ Link Copied!");
+}
 
-  if (key) {
-    keyBox.style.display = "block";
-    keyText.textContent = key;
-    copyBtn.style.display = "inline-block";
+function copyKey(){
+  let t = document.getElementById("keyText").innerText;
+  navigator.clipboard.writeText(t);
+  alert("✅ Key Copied!");
+}
+
+{% if expires_in %}
+let remain = {{ expires_in }};
+function tick(){
+  if(remain <= 0){
+    document.getElementById("time").innerText = "Expired";
+    return;
   }
-
-  // copy with tiny loader
-  copyBtn?.addEventListener("click", async () => {
-    overlay.style.display = "flex";
-    try {
-      await navigator.clipboard.writeText(keyText.textContent);
-      alert("✅ Key copied!");
-    } catch (e) {
-      alert("❌ Could not copy the key");
-    } finally {
-      overlay.style.display = "none";
-    }
-  });
-
-  // share link + key with loader
-  document.getElementById("shareBtn").addEventListener("click", async () => {
-    overlay.style.display = "flex";
-    const text = "File link: {{ public }}\nKey: " + (key || "(saved on your device)");
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: "SmartQR File", text, url: "{{ public }}" });
-      } else {
-        alert(text);
-      }
-    } catch(e) {
-      /* share cancelled */
-    } finally {
-      overlay.style.display = "none";
-    }
-  });
-
-  // countdown (server sends expires_in seconds)
-  {% if expires_in is not none %}
-    let remain = parseInt({{ expires_in }});
-    const el = document.getElementById("count");
-    function fmt(s){
-      const h = Math.floor(s/3600);
-      const m = Math.floor((s%3600)/60);
-      const sec = Math.floor(s%60);
-      return `${h}h ${m}m ${sec}s`;
-    }
-    function tick(){
-      if (remain < 0) { el.textContent = "Expired"; return; }
-      el.textContent = fmt(remain--);
-    }
-    tick();
-    setInterval(tick, 1000);
-  {% endif %}
-
-  // one-time key: clear when leaving
-  window.addEventListener("beforeunload", () => {
-    sessionStorage.removeItem("last_upload_key");
-  });
+  let h = Math.floor(remain/3600);
+  let m = Math.floor((remain%3600)/60);
+  let s = remain % 60;
+  document.getElementById("time").innerText = `${h}h ${m}m ${s}s`;
+  remain--;
+}
+tick();
+setInterval(tick, 1000);
+{% endif %}
 </script>
 
 </body>
