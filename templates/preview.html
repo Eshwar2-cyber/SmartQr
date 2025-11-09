@@ -50,9 +50,10 @@ async function startUpload() {
     const file = fileInput.files[0];
     if (!file) return alert("Select a file first!");
 
-    const chunkSize = 10 * 1024 * 1024;
+    const chunkSize = 10 * 1024 * 1024; // 10MB
     const totalChunks = Math.ceil(file.size / chunkSize);
     const fileId = Date.now().toString();
+    const encodedName = encodeURIComponent(file.name);
 
     progressBar.style.display = "block";
     let uploaded = 0;
@@ -69,9 +70,9 @@ async function startUpload() {
         form.append("index", i);
         form.append("total", totalChunks);
 
-        await fetch(`${window.location.origin}/upload_chunk`, { 
-            method: "POST", 
-            body: form 
+        await fetch(`${window.location.origin}/upload_chunk`, {
+            method: "POST",
+            body: form
         });
 
         uploaded++;
@@ -85,27 +86,25 @@ async function startUpload() {
         etaText.textContent = `⏳ ${percent}% uploaded — Est. time: ${remain.toFixed(1)}s`;
     }
 
-    // ✅ Finish Upload -> Create QR internally
-    const fin = await fetch(`${window.location.origin}/finish_upload?file_id=${fileId}&filename=${file.name}`);
+    // ✅ Safe request for finish
+    const fin = await fetch(`${window.location.origin}/finish_upload?file_id=${fileId}&filename=${encodedName}`);
     
     let data;
     try {
         data = await fin.json();
     } catch (e) {
-        return alert("❌ Server error, QR could not be generated.");
+        const text = await fin.text().catch(() => "");
+        return alert(`❌ Server error (${fin.status}). ${text.slice(0,100)}`);
     }
 
     if (data.status !== "ok") {
-        return alert("❌ Error from server: " + (data.error || "unknown"));
+        return alert("❌ Error: " + (data.error || "QR generation failed"));
     }
 
-    // ✅ Save key for success page (if needed)
     sessionStorage.setItem("last_upload_key", data.key);
-
     etaText.textContent = "✅ Upload complete! Generating QR…";
 
-    // ✅ Redirect to success page
-    window.location.href = `/success/${encodeURIComponent(file.name)}`;
+    window.location.href = `/success/${encodedName}`;
 }
 </script>
 
