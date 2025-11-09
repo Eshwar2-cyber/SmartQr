@@ -1,128 +1,182 @@
-import os
-import base64
-import qrcode
-from flask import Flask, render_template, request, send_from_directory, redirect, url_for, abort
-from cryptography.fernet import Fernet
+from flask import Flask, render_template, request, jsonify, send_file
+import os, time, shutil, json, qrcode, threading
 from werkzeug.utils import secure_filename
+from cryptography.fernet import Fernet
 
 app = Flask(__name__)
 
-UPLOAD_FOLDER = "uploads"
-CHUNK_FOLDER = "chunks"
-ENCRYPTED_FOLDER = "encrypted"
-STATIC_QR_FOLDER = "static/qr"
+BASE = os.path.dirname(os.path.abspath(__file__))
+UPLOAD = os.path.join(BASE, "uploads")
+ENCRYPT = os.path.join(BASE, "encrypted")
+QRFOLDER = os.path.join(BASE, "static", "qrcodes")
+CHUNKS = os.path.join(BASE, "chunks")
 
-for f in [UPLOAD_FOLDER, CHUNK_FOLDER, ENCRYPTED_FOLDER, STATIC_QR_FOLDER]:
+for f in [UPLOAD, ENCRYPT, QRFOLDER, CHUNKS]:
     os.makedirs(f, exist_ok=True)
 
+PUBLIC = "https://smartqr-pe0z.onrender.com"
+CHUNK_SIZE = 4 * 1024 * 1024  # 4MB – safe
 
-def encrypt_file(input_path, output_path):
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@app.route("/preview")
+def preview():
+    return render_template("preview.html")
+
+# ✅ CHUNK UPLOAD
+@app.route("/upload_chunk", methods=["POST"])
+def upload_chunk():
+    file_id = request.form["file_id"]
+    filename = secure_filename(request.form["filename"])
+    index = int(request.form["index"])
+    chunk = request.files["chunk"]
+
+    folder = os.path.join(CHUNKS, file_id)
+    os.makedirs(folder, exist_ok=True)
+
+    chunk.save(os.path.join(folder, f"{index:08d}.part"))
+    return "OK", 200
+
+# ✅ FINISH MERGE + ENCRYPT + QR
+@app.route("/finish_upload")
+def finish_upload():
+    file_id = request.args.get("file_id")
+    filename = secure_filename(request.args.get("filename"))
+    folder = os.path.join(CHUNKS, file_id)
+
+    if not os.path.isdir(folder):
+        return jsonify({"status": "error", "error": "upload missing"}), 404
+
+    final_path = os.path.join(UPLOAD, filename)
+    parts = sorted([f for f in os.listdir(folder) if f.endswith(".part")])
+
+    with open(final_path, "wb") as out:
+        for p in parts:
+            with open(os.path.join(folder, p), "rb") as ch:
+                shutil.copyfileobj(ch, out)
+
+    shutil.rmtree(folder, ignore_errors=True)
+
+    # ENCRYPT STREAM
     key = Fernet.generate_key()
     cipher = Fernet(key)
 
-    with open(input_path, "rb") as infile:
-        data = infile.read()
-        enc = cipher.encrypt(data)
+    encrypted_path = os.path.join(ENCRYPT, filename)
 
-    with open(output_path, "wb") as outfile:
-        outfile.write(enc)
+    with open(final_path, "rb") as fin, open(encrypted_path, "wb") as fout:
+        while True:
+            data = fin.read(CHUNK_SIZE)
+            if not data:
+                break
+            token = cipher.encrypt(data)
+            fout.write(len(token).to_bytes(4, "big"))
+            fout.write(token)
 
-    return base64.urlsafe_b64encode(key).decode()
+    # Save meta time
+    with open(encrypted_path + ".meta", "w") as f:
+        json.dump({"time": time.time()}, f)
 
+    os.remove(final_path)
 
-def decrypt_file_data(enc_path, key):
-    try:
-        cipher = Fernet(key)
-        with open(enc_path, "rb") as f:
-            data = cipher.decrypt(f.read())
-        return data
-    except:
-        return None
+    # QR
+    link = f"{PUBLIC}/view/{filename}"
+    qr_name = f"{filename}_qr.png"
+    qrcode.make(link).save(os.path.join(QRFOLDER, qr_name))
 
-
-@app.route("/")
-def home():
-    return render_template("index.html")
-
-
-@app.route("/upload", methods=["POST"])
-def upload():
-    if "file" not in request.files:
-        return "No file uploaded!"
-
-    file = request.files["file"]
-    if file.filename == "":
-        return "No file selected."
-
-    filename = secure_filename(file.filename)
-    upload_path = os.path.join(UPLOAD_FOLDER, filename)
-    enc_path = os.path.join(ENCRYPTED_FOLDER, filename + ".enc")
-
-    file.save(upload_path)
-
-    key = encrypt_file(upload_path, enc_path)
-
-    public_link = request.host_url + "view/" + filename
-    qr_img = qrcode.make(public_link)
-    qr_file = os.path.join(STATIC_QR_FOLDER, filename + ".png")
-    qr_img.save(qr_file)
-
-    qr_url = url_for("static", filename=f"qr/{filename}.png")
-
-    return render_template("success.html",
-                           filename=filename,
-                           key=key,
-                           qr_url=qr_url,
-                           public_link=public_link)
-
+    return jsonify({
+        "status": "ok",
+        "key": key.decode(),
+        "qr": qr_name,
+        "filename": filename,
+        "public": link
+    })
 
 @app.route("/view/<filename>")
-def view_file(filename):
-    enc_file = os.path.join(ENCRYPTED_FOLDER, filename + ".enc")
-    if not os.path.exists(enc_file):
+def view(filename):
+    enc = os.path.join(ENCRYPT, filename)
+    if not os.path.exists(enc):
         return render_template("404.html")
 
-    return render_template("view.html", filename=filename)
+    time_left = 86400
+    meta = enc + ".meta"
+    if os.path.exists(meta):
+        t = json.load(open(meta)).get("time")
+        time_left = max(0, int(86400 - (time.time() - t)))
 
+    return render_template("view.html", filename=filename, countdown=time_left)
 
-@app.route("/unlock/<filename>", methods=["POST"])
+@app.route("/unlock/<filename>")
 def unlock(filename):
+    return render_template("unlock.html", filename=filename)
+
+# ✅ DECRYPT STREAM & PREVIEW
+@app.route("/decrypt/<filename>", methods=["POST"])
+def decrypt(filename):
     key = request.form.get("key")
-    if not key:
-        return "Invalid key!"
+    enc = os.path.join(ENCRYPT, filename)
+
+    if not os.path.exists(enc):
+        return render_template("404.html")
 
     try:
-        key = base64.urlsafe_b64decode(key)
+        cipher = Fernet(key.encode())
     except:
-        return render_template("404.html")
+        return "<h2>❌ Invalid key</h2><a href='/'>Home</a>"
 
-    enc_file = os.path.join(ENCRYPTED_FOLDER, filename + ".enc")
-    data = decrypt_file_data(enc_file, key)
+    dec = os.path.join(UPLOAD, filename)
+    with open(enc, "rb") as fin, open(dec, "wb") as fout:
+        while True:
+            sizeb = fin.read(4)
+            if not sizeb:
+                break
+            size = int.from_bytes(sizeb, "big")
+            token = fin.read(size)
+            fout.write(cipher.decrypt(token))
 
-    if data is None:
-        return render_template("404.html")
+    ext = filename.lower()
 
-    preview_path = os.path.join(UPLOAD_FOLDER, filename)
-    with open(preview_path, "wb") as f:
-        f.write(data)
+    if ext.endswith((".png",".jpg",".jpeg",".gif",".webp")):
+        return render_template("decrypted_image.html", image=f"/uploads/{filename}")
 
-    return redirect(url_for("preview", filename=filename))
+    if ext.endswith((".mp4",".mov",".webm",".mkv")):
+        return render_template("decrypted_video.html", video=f"/uploads/{filename}")
 
+    if ext.endswith(".pdf"):
+        return render_template("decrypted_pdf.html", pdf=f"/uploads/{filename}")
 
-@app.route("/preview/<filename>")
-def preview(filename):
-    return render_template("preview.html", filename=filename)
+    if ext.endswith((".txt",".log",".json")):
+        text = open(dec, "r", errors="ignore").read()
+        return render_template("decrypted_text.html", content=text)
 
+    return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
-@app.route("/download/<filename>")
-def download(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename, as_attachment=True)
+@app.route("/uploads/<filename>")
+def serve_file(filename):
+    return send_file(os.path.join(UPLOAD, filename), as_attachment=False)
 
+@app.route("/success/<filename>")
+def success(filename):
+    qr = f"/static/qrcodes/{filename}_qr.png"
 
-@app.errorhandler(404)
-def error_page(e):
-    return render_template("404.html")
-    
+    # compute remaining seconds from meta
+    expires_in = None
+    meta_path = os.path.join(ENCRYPT, filename + ".meta")
+    if os.path.exists(meta_path):
+        try:
+            data = json.load(open(meta_path))
+            uploaded_at = data.get("time") or data.get("uploaded_at")
+            ttl = data.get("ttl", 86400)  # default 24h
+            if uploaded_at:
+                expires_in = max(0, int((uploaded_at + ttl) - time.time()))
+        except:
+            expires_in = None
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    return render_template(
+        "success.html",
+        filename=filename,
+        qr=qr,
+        public=f"{PUBLIC}/view/{filename}",
+        expires_in=expires_in
+    )

@@ -1,51 +1,134 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>QR Generated</title>
-  <style>
-    body{font-family:Arial;text-align:center;background:#f9fafc;padding:40px}
-    .card{background:#fff;padding:30px;border-radius:10px;
-      box-shadow:0 4px 15px rgba(0,0,0,.1);display:inline-block}
-    button,a{padding:10px 20px;margin-top:10px;border-radius:8px;
-      text-decoration:none;font-size:15px}
-    a{background:#2563eb;color:#fff}
-    button{background:#16a34a;color:white;border:none}
-  </style>
+<meta charset="UTF-8">
+<title>QR Ready</title>
+<style>
+  :root { --brand:#2563eb; --ok:#059669; --bg:#f9fafc; --text:#0f172a; }
+  body{font-family:Arial, sans-serif;background:var(--bg);color:var(--text);text-align:center;padding:56px}
+  .card{background:#fff;padding:28px 28px 24px;border-radius:14px;display:inline-block;box-shadow:0 6px 28px rgba(0,0,0,.10);min-width:320px}
+  .qr-wrap{display:inline-block;padding:14px;border-radius:16px;position:relative;animation:pulse 2.2s ease-in-out infinite}
+  .qr{width:240px;height:auto;border-radius:10px;display:block}
+  @keyframes pulse {
+    0%{box-shadow:0 0 0 0 rgba(37,99,235,.35)}
+    70%{box-shadow:0 0 0 18px rgba(37,99,235,0)}
+    100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}
+  }
+  .row{display:flex;gap:10px;justify-content:center;align-items:center;margin-top:14px;flex-wrap:wrap}
+  .keybox{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;min-width:260px;text-align:left;word-break:break-all}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:8px;padding:10px 16px;cursor:pointer}
+  .btn.ok{background:var(--ok)}
+  .btn.ghost{background:#0ea5e9}
+  .link{display:inline-block;margin-top:10px;text-decoration:none;color:#fff;background:var(--brand);padding:10px 16px;border-radius:8px}
+  .muted{color:#475569;font-size:14px;margin-top:8px}
+  .count{font-weight:700}
+  .actions{margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  /* Loader overlay */
+  .overlay{position:fixed;inset:0;background:rgba(15,23,42,.35);display:none;align-items:center;justify-content:center;z-index:50}
+  .spinner{width:44px;height:44px;border-radius:50%;border:4px solid #fff;border-top-color:var(--brand);animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
 </head>
 <body>
 
 <div class="card">
   <h2>✅ QR Code Generated</h2>
 
-  <img src="{{ qr_url }}" width="230">
+  <div class="qr-wrap">
+    <img class="qr" src="{{ qr }}" alt="QR Code">
+  </div>
 
-  <br><br>
-  <b>Key:</b> <span id="keyText">{{ key }}</span>
-  <button onclick="copyKey()">Copy</button>
+  <div class="row" style="margin-top:18px">
+    <div id="keyBox" class="keybox" style="display:none">
+      <b>Key:</b> <span id="keyText"></span>
+    </div>
+    <button id="copyBtn" class="btn ok" style="display:none">Copy Key</button>
+  </div>
 
-  <p>⚠ Save this key — without it file cannot be opened.</p>
+  <p class="muted">⚠️ Save the key — without it the file cannot be unlocked.</p>
 
-  <a href="{{ public_link }}">View File Page</a><br><br>
+  <div class="actions">
+    <a class="link" href="{{ public }}" target="_blank">Open File Page</a>
+    <button id="shareBtn" class="btn ghost">Share</button>
+    <a class="btn" href="/">Home</a>
+  </div>
 
-  <button onclick="shareNow()">Share</button><br><br>
+  {% if expires_in is not none %}
+  <p class="muted">⏳ Expires in: <span id="count" class="count"></span></p>
+  {% endif %}
+</div>
 
-  <a href="/">🏠 Home</a>
+<!-- Loader Overlay -->
+<div id="overlay" class="overlay">
+  <div class="spinner" aria-label="Loading"></div>
 </div>
 
 <script>
-function copyKey() {
-  navigator.clipboard.writeText(document.getElementById("keyText").innerText);
-  alert("✅ Key copied!");
-}
+  // read key from sessionStorage (set in preview.html after upload)
+  const key = sessionStorage.getItem("last_upload_key");
+  const keyBox = document.getElementById("keyBox");
+  const keyText = document.getElementById("keyText");
+  const copyBtn = document.getElementById("copyBtn");
+  const overlay = document.getElementById("overlay");
 
-function shareNow() {
-  const text = "File Link: {{ public_link }}\nKey: {{ key }}";
-  if(navigator.share)
-    navigator.share({text:text});
-  else
-    alert(text);
-}
+  if (key) {
+    keyBox.style.display = "block";
+    keyText.textContent = key;
+    copyBtn.style.display = "inline-block";
+  }
+
+  // copy with tiny loader
+  copyBtn?.addEventListener("click", async () => {
+    overlay.style.display = "flex";
+    try {
+      await navigator.clipboard.writeText(keyText.textContent);
+      alert("✅ Key copied!");
+    } catch (e) {
+      alert("❌ Could not copy the key");
+    } finally {
+      overlay.style.display = "none";
+    }
+  });
+
+  // share link + key with loader
+  document.getElementById("shareBtn").addEventListener("click", async () => {
+    overlay.style.display = "flex";
+    const text = "File link: {{ public }}\nKey: " + (key || "(saved on your device)");
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "SmartQR File", text, url: "{{ public }}" });
+      } else {
+        alert(text);
+      }
+    } catch(e) {
+      /* share cancelled */
+    } finally {
+      overlay.style.display = "none";
+    }
+  });
+
+  // countdown (server sends expires_in seconds)
+  {% if expires_in is not none %}
+    let remain = parseInt({{ expires_in }});
+    const el = document.getElementById("count");
+    function fmt(s){
+      const h = Math.floor(s/3600);
+      const m = Math.floor((s%3600)/60);
+      const sec = Math.floor(s%60);
+      return `${h}h ${m}m ${sec}s`;
+    }
+    function tick(){
+      if (remain < 0) { el.textContent = "Expired"; return; }
+      el.textContent = fmt(remain--);
+    }
+    tick();
+    setInterval(tick, 1000);
+  {% endif %}
+
+  // one-time key: clear when leaving
+  window.addEventListener("beforeunload", () => {
+    sessionStorage.removeItem("last_upload_key");
+  });
 </script>
 
 </body>
