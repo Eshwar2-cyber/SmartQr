@@ -1,80 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>QR Code Generated</title>
-  <style>
-    body { font-family: Arial, sans-serif; background:#f4f6fb; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; }
-    .card { width: 420px; background:#fff; border-radius:14px; padding:26px; box-shadow:0 10px 30px rgba(0,0,0,.08); text-align:center; }
-    h2 { margin: 0 0 12px; color:#16a34a; }
-    .qr { width:230px; height:auto; border-radius:10px; margin:10px auto 14px; display:block; }
-    .btn { width:100%; border:none; padding:12px; border-radius:9px; font-size:16px; color:#fff; background:#2563eb; cursor:pointer; margin-top:10px; }
-    .btn:hover { filter:brightness(.95); }
-    .btn.whatsapp { background:#25D366; }
-    .btn.telegram { background:#0088cc; }
-    .btn.home { background:#ef4444; }
-    .keybox { margin-top:10px; background:#f3f4f6; border:1px solid #e5e7eb; padding:10px; border-radius:8px; word-break:break-word; font-family:monospace; }
-    .expires { font-size:14px; color:#374151; margin-top:10px; }
-  </style>
+    <meta charset="UTF-8">
+    <title>QR Generated</title>
+    <style>
+        body { font-family: Arial; text-align: center; background: #f9fafc; padding: 50px; }
+        .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; }
+        img { width: 250px; margin-top: 20px; }
+        a { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; display: inline-block; margin-top: 15px; }
+        .key-box { background: #f3f4f6; border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-top: 15px; word-break: break-all; }
+    </style>
 </head>
-
 <body>
-<div class="card">
-    <h2>✅ QR Code Generated</h2>
+    <div class="card">
+        <h2>✅ QR Code & Key Generated!</h2>
+        <img src="/static/qrcodes/{{ qr_image }}" alt="QR Code">
 
-    <img class="qr"
-         src="{{ url_for('static', filename='qrcodes/' + filename + '_qr.png') }}"
-         alt="QR Code" />
+        <div class="key-box"><strong>Your Key:</strong><br>{{ key }}</div>
+        <p style="color:red;font-size:14px;">⚠️ Save this key — it won't show again.</p>
 
-    <div class="keybox" id="keyBox">{{ key or '' }}</div>
+        {% if expires_in %}
+        <p>⏳ Expires in: <span id="exp"></span></p>
+        {% endif %}
 
-    <button class="btn" onclick="copyKey()">Copy Key</button>
-    <button class="btn" onclick="openLink()">Open File Page</button>
-    <button class="btn whatsapp" onclick="shareWhatsApp()">Share on WhatsApp</button>
-    <button class="btn telegram" onclick="shareTelegram()">Share on Telegram</button>
-
-    {% if expires_in %}
-    <div class="expires">⏳ Expires in <span id="exp"></span></div>
-    {% endif %}
-
-    <button class="btn home" onclick="location.href='/'">🏠 Home</button>
-</div>
+        <a href="{{ public_link }}">View File Page</a><br><br>
+        <a href="/">🏠 Home</a>
+    </div>
 
 <script>
-  const publicLink = "{{ public }}";
-  const serverKey = "{{ key or '' }}";
-  const keyBox = document.getElementById("keyBox");
-
-  if(!serverKey.trim()) keyBox.textContent = "NOT SHOWN";
-
-  function copyKey(){
-    const k = keyBox.textContent.trim();
-    navigator.clipboard.writeText(k);
-    alert("Key Copied!");
-  }
-  function openLink(){ window.open(publicLink, "_blank"); }
-  function shareWhatsApp(){
-    const txt = `Open: ${publicLink}\nKey: ${keyBox.textContent.trim()}`;
-    window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
-  }
-  function shareTelegram(){
-    const txt = `Open: ${publicLink}\nKey: ${keyBox.textContent.trim()}`;
-    window.open("https://t.me/share/url?url=" + encodeURIComponent(publicLink) + "&text=" + encodeURIComponent(txt), "_blank");
-  }
-
-  {% if expires_in %}
-  let t = {{ expires_in }};
-  function timer(){
-    if(t <= 0){ document.getElementById("exp").textContent = "Expired"; return; }
-    const h = Math.floor(t/3600),
-          m = Math.floor((t%3600)/60),
-          s = t%60;
-    document.getElementById("exp").textContent = `${h}h ${m}m ${s}s`;
-    t--;
-  }
-  timer();
-  setInterval(timer, 1000);
-  {% endif %}
+{% if expires_in %}
+    let t = {{ expires_in }};
+    function timer(){
+        if(t<=0){ document.getElementById("exp").innerHTML="Expired"; return; }
+        const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
+        document.getElementById("exp").innerHTML=`${h}h ${m}m ${s}s`;
+        t--;
+    }
+    timer();
+    setInterval(timer, 1000);
+{% endif %}
 </script>
 
 </body>
