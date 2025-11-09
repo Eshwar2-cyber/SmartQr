@@ -6,28 +6,12 @@
     <style>
         body { font-family: Arial; text-align: center; background: #f9fafc; padding: 50px; }
         .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; }
-        img { width: 250px; margin-top: 20px; }
-        a, button { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; display: inline-block; margin-top: 15px; border: none; cursor: pointer; }
-        a:hover, button:hover { background: #1d4ed8; }
-        .share-btn { background:#0ea5e9 !important; }
-        .copy-btn { background:#059669 !important; }
-        
-        .key-row { 
-            background: #f3f4f6; 
-            border: 1px solid #ccc; 
-            border-radius: 8px; 
-            padding: 10px; 
-            margin-top: 15px; 
-            display: flex; 
-            justify-content: center;
-            align-items: center;
-            gap: 15px;
-            font-weight: bold;
-            word-break: break-all;
-        }
-
-        #warn { color:red; font-size:14px; display:none; }
-        #countdown { margin-top:10px; font-weight:600; color:#444; }
+        a, button { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; margin-top: 15px; display: inline-block; border: none; cursor: pointer; }
+        button:hover, a:hover { background: #1d4ed8; }
+        .key-box { display:flex; background:#f3f4f6; padding:10px; border-radius:8px; border:1px solid #ddd; gap:10px; align-items:center; justify-content:center; word-break: break-all; }
+        .copy-btn { background:#059669; }
+        #warn { color:red; }
+        #countdown { font-weight:bold; margin-top:10px; }
     </style>
 </head>
 <body>
@@ -35,84 +19,72 @@
 <div class="card">
     <h2>✅ QR Code Generated</h2>
 
-    <img src="{{ qr_image }}" alt="QR Code">
+    <!-- ✅ QR ALWAYS WORKS -->
+    <img src="{{ qr_url }}" alt="QR Code" width="230">
 
-    <!-- Hidden upload time -->
+    <!-- upload time -->
     <input type="hidden" id="uploadedAt" value="{{ uploaded_at }}">
 
-    <!-- Key + Copy Button INLINE ✅ -->
-    <div class="key-row" id="keyRow" style="display:none;">
+    <!-- Key & Copy Button -->
+    <div class="key-box" id="keyRow" style="display:none;">
         <span id="keyText"></span>
-        <button class="copy-btn" id="copyBtn">📋 Copy</button>
+        <button class="copy-btn" id="copyBtn">Copy</button>
     </div>
 
-    <p id="warn">⚠️ Save this key — it won't show again.</p>
+    <p id="warn" style="display:none;">⚠️ Save this key — it won't show again.</p>
     <p id="countdown"></p>
 
     <a href="{{ public_link }}" target="_blank">View File Page</a><br>
-
-    <button class="share-btn" id="shareBtn">🔗 Share</button><br>
-
+    <button onclick="shareFile()">🔗 Share</button><br>
     <a href="/">🏠 Home</a>
 </div>
 
 <script>
 const key = sessionStorage.getItem("last_upload_key");
 
-// ✅ Show key and copy inline
+// ✅ show key inline
 if (key) {
-    document.getElementById("keyRow").style.display = "flex";
-    document.getElementById("keyText").textContent = key;
-    document.getElementById("warn").style.display = "block";
+    keyRow.style.display = "flex";
+    keyText.textContent = key;
+    warn.style.display = "block";
 }
 
-// ✅ Copy button
-document.getElementById("copyBtn").addEventListener("click", () => {
-    navigator.clipboard.writeText(key)
-        .then(() => alert("✅ Key copied!"))
-        .catch(() => alert("❌ Could not copy key"));
-});
+// ✅ copy button
+copyBtn.onclick = () => navigator.clipboard.writeText(key).then(()=>alert("✅ Copied"));
 
-// ✅ Share
-document.getElementById("shareBtn").addEventListener("click", function() {
-    let text = `Download:\n{{ public_link }}\nKey: ${key}`;
+// ✅ share button
+function shareFile() {
+    let text = "File link: {{ public_link }}\nKey: " + key;
     if (navigator.share) {
-        navigator.share({ title:"Smart QR File Share", text, url:"{{ public_link }}" });
+        navigator.share({ text, url:"{{ public_link }}" });
     } else {
-        alert("Sharing not supported on this browser 😔");
+        alert("Sharing not supported");
     }
-});
-
-// ✅ Countdown on success page
-const uploadedAt = parseFloat(document.getElementById("uploadedAt").value);
-const countdown = document.getElementById("countdown");
-
-if (uploadedAt) {
-    function update() {
-        const now = Date.now() / 1000;
-        const expire = uploadedAt + 86400;
-        const remain = expire - now;
-
-        if (remain <= 0) {
-            countdown.textContent = "❌ File has expired";
-            return;
-        }
-
-        const h = Math.floor(remain / 3600);
-        const m = Math.floor((remain % 3600) / 60);
-        const s = Math.floor(remain % 60);
-
-        countdown.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
-    }
-
-    update();
-    setInterval(update, 1000);
 }
 
-// ✅ remove key after leaving
-window.addEventListener("beforeunload", () => {
-    sessionStorage.removeItem("last_upload_key");
-});
+// ✅ countdown
+const uploadedAt = parseFloat(document.getElementById("uploadedAt").value);
+function update() {
+    if (!uploadedAt) return;
+
+    const now = Date.now() / 1000;
+    const remain = (uploadedAt + 86400) - now;
+
+    if (remain <= 0) {
+        countdown.textContent = "❌ File expired";
+        return;
+    }
+    const h = Math.floor(remain/3600);
+    const m = Math.floor((remain%3600)/60);
+    const s = Math.floor(remain%60);
+    countdown.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
+}
+
+update();
+setInterval(update, 1000);
+
+// ✅ remove key when leaving
+window.addEventListener("beforeunload", ()=>sessionStorage.removeItem("last_upload_key"));
 </script>
 
 </body>
