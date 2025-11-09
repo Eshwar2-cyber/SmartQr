@@ -1,13 +1,15 @@
 from flask import Flask, render_template, request, send_file, jsonify
-import os, qrcode, base64, time, threading, shutil, json
+import os, qrcode, time, threading, shutil, json
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
 
 app = Flask(__name__)
 
 # ==========================
-# Folder Configurations
+# Limits & folders
 # ==========================
+app.config['MAX_CONTENT_LENGTH'] = 256 * 1024 * 1024  # 256 MB cap (avoid OOM)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 ENCRYPTED_FOLDER = os.path.join(BASE_DIR, "encrypted")
@@ -20,6 +22,9 @@ os.makedirs(QR_FOLDER, exist_ok=True)
 os.makedirs(CHUNKS_FOLDER, exist_ok=True)
 
 PUBLIC_BASE = "https://smartqr-pe0z.onrender.com"  # change if domain changes
+
+# Stream chunk size (kept small to be safe on 512MB instances)
+CHUNK_SIZE = 4 * 1024 * 1024  # 4 MB
 
 
 # ==========================
@@ -60,6 +65,40 @@ def upload_chunk():
 
 
 # ==========================
+# Helpers: stream encrypt/decrypt
+# ==========================
+def encrypt_file_stream(in_path: str, out_path: str, key: bytes):
+    """
+    Encrypts file in chunks using Fernet.
+    Each chunk is written as: [4-byte big-endian length][fernet_token_bytes]
+    """
+    cipher = Fernet(key)
+    with open(in_path, "rb") as fin, open(out_path, "wb") as fout:
+        while True:
+            data = fin.read(CHUNK_SIZE)
+            if not data:
+                break
+            token = cipher.encrypt(data)
+            fout.write(len(token).to_bytes(4, "big"))
+            fout.write(token)
+
+
+def decrypt_file_stream(in_path: str, out_path: str, key: bytes):
+    """
+    Reverses encrypt_file_stream: reads length-prefixed Fernet tokens and writes plaintext.
+    """
+    cipher = Fernet(key)
+    with open(in_path, "rb") as fin, open(out_path, "wb") as fout:
+        while True:
+            len_bytes = fin.read(4)
+            if not len_bytes:
+                break
+            n = int.from_bytes(len_bytes, "big")
+            token = fin.read(n)
+            fout.write(cipher.decrypt(token))
+
+
+# ==========================
 # FINISH: MERGE → ENCRYPT → CREATE QR
 # ==========================
 @app.route("/finish_upload")
@@ -76,6 +115,7 @@ def finish_upload():
     if not os.path.isdir(folder):
         return jsonify({"error": "upload not found"}), 404
 
+    # Merge chunks to final_path (streamed)
     final_path = os.path.join(UPLOAD_FOLDER, safe_name)
     part_files = sorted([f for f in os.listdir(folder) if f.endswith(".part")])
 
@@ -86,28 +126,23 @@ def finish_upload():
 
     shutil.rmtree(folder, ignore_errors=True)
 
-    # Encrypt
+    # Stream ENCRYPT (no large buffers in RAM)
     key = Fernet.generate_key()
-    cipher = Fernet(key)
-
-    with open(final_path, "rb") as f:
-        encrypted_data = cipher.encrypt(f.read())
-
     encrypted_path = os.path.join(ENCRYPTED_FOLDER, safe_name)
-    with open(encrypted_path, "wb") as ef:
-        ef.write(encrypted_data)
-
-    try:
-        os.remove(final_path)
-    except:
-        pass
+    encrypt_file_stream(final_path, encrypted_path, key)
 
     # Save upload time for countdown
     meta_path = os.path.join(ENCRYPTED_FOLDER, safe_name + ".meta")
     with open(meta_path, "w") as mf:
         json.dump({"uploaded_at": time.time()}, mf)
 
-    # Generate QR
+    # Remove clear file
+    try:
+        os.remove(final_path)
+    except:
+        pass
+
+    # Generate QR for the view URL (tiny)
     file_url = f"{PUBLIC_BASE}/view/{safe_name}"
     qr_img = qrcode.make(file_url)
     qr_filename = f"{safe_name}_qr.png"
@@ -127,7 +162,7 @@ def view_file(filename):
         return render_template("404.html", filename=filename)
 
     meta_path = os.path.join(ENCRYPTED_FOLDER, filename + ".meta")
-
+    uploaded_at = None
     if os.path.exists(meta_path):
         try:
             with open(meta_path, "r") as mf:
@@ -135,8 +170,6 @@ def view_file(filename):
                 uploaded_at = meta.get("uploaded_at", None)
         except:
             uploaded_at = None
-    else:
-        uploaded_at = None
 
     return render_template("view.html", filename=filename, uploaded_at=uploaded_at)
 
@@ -150,7 +183,7 @@ def unlock(filename):
 
 
 # ==========================
-# DECRYPT
+# DECRYPT (streamed)
 # ==========================
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt_file(filename):
@@ -161,13 +194,8 @@ def decrypt_file(filename):
         return render_template("404.html", filename=filename)
 
     try:
-        cipher = Fernet(key.encode())
-        with open(encrypted_path, "rb") as ef:
-            decrypted_data = cipher.decrypt(ef.read())
-
         decrypted_path = os.path.join(UPLOAD_FOLDER, filename)
-        with open(decrypted_path, "wb") as df:
-            df.write(decrypted_data)
+        decrypt_file_stream(encrypted_path, decrypted_path, key.encode())
 
         return render_template(
             "success.html",
@@ -176,8 +204,8 @@ def decrypt_file(filename):
             public_link=f"/uploads/{filename}",
             key=None
         )
-    except:
-        return "<h2>❌ Invalid Key! Access Denied.</h2><a href='/'>Return Home</a>"
+    except Exception as e:
+        return "<h2>❌ Invalid Key or Decryption Error.</h2><a href='/'>Return Home</a>"
 
 
 # ==========================
@@ -235,7 +263,6 @@ threading.Thread(
     args=([UPLOAD_FOLDER, ENCRYPTED_FOLDER, QR_FOLDER, CHUNKS_FOLDER], 86400, 600),
     daemon=True
 ).start()
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
