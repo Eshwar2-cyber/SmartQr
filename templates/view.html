@@ -5,16 +5,54 @@
     <title>Encrypted File</title>
     <style>
         body { font-family: Arial; text-align: center; padding: 50px; background: #f4f5f7; }
-        .card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); display:inline-block; }
+        .card { background: white; padding: 40px; border-radius: 15px; box-shadow:0 4px 15px rgba(0,0,0,0.1); display:inline-block; }
         a { text-decoration: none; background: #2563eb; color: white; padding: 10px 20px; border-radius: 8px; }
         a:hover { background: #1d4ed8; }
+        #expiredMsg { color:red; font-weight:bold; display:none; }
+        #countdown { font-weight:bold; margin-top:10px; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h2>🔒 This file is protected</h2>
-        <p>Click below to enter the key and unlock it.</p>
-        <a href="/unlock/{{ filename }}">Enter Key</a>
-    </div>
+
+<div class="card">
+    <h2>🔒 This file is protected</h2>
+    <p id="countdown"></p>
+    <p id="expiredMsg">❌ File has expired and was deleted.</p>
+
+    <a id="unlockBtn" href="/unlock/{{ filename }}">Enter Key</a>
+</div>
+
+<script>
+const uploadedAt = "{{ uploaded_at }}";
+const countdown = document.getElementById("countdown");
+const expiredMsg = document.getElementById("expiredMsg");
+const unlockBtn = document.getElementById("unlockBtn");
+
+if (uploadedAt) {
+    function update() {
+        const now = Date.now() / 1000;
+        const expire = Number(uploadedAt) + 86400;
+        const remain = expire - now;
+
+        if (remain <= 0) {
+            countdown.style.display = "none";
+            unlockBtn.style.display = "none";
+            expiredMsg.style.display = "block";
+            return;
+        }
+
+        const h = Math.floor(remain / 3600);
+        const m = Math.floor((remain % 3600) / 60);
+        const s = Math.floor(remain % 60);
+
+        countdown.textContent = `⏳ File expires in: ${h}h ${m}m ${s}s`;
+    }
+
+    update();
+    setInterval(update, 1000);
+}
+</script>
+
+
 </body>
 </html>

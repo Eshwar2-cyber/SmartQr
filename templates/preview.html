@@ -5,66 +5,93 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart QR File Share</title>
     <style>
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #f9f9f9, #e9eef5);
-            text-align: center;
-            padding-top: 100px;
-        }
-        .upload-box {
-            border: 2px dashed #2b6cb0;
-            padding: 40px;
-            border-radius: 15px;
-            background: #f1f5fb;
-            display: inline-block;
-            cursor: pointer;
-            transition: 0.3s;
-        }
-        .upload-box:hover {
-            background: #e0ebff;
-        }
+        body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #f9f9f9, #e9eef5); text-align: center; padding-top: 100px; }
+        .upload-box { border: 2px dashed #2b6cb0; padding: 40px; border-radius: 15px; background: #f1f5fb; display: inline-block; cursor: pointer; transition: 0.3s; }
+        .upload-box:hover { background: #e0ebff; }
         input[type="file"] { display: none; }
-        .btn {
-            background: #2b6cb0;
-            color: white;
-            padding: 10px 25px;
-            border: none;
-            border-radius: 10px;
-            margin-top: 20px;
-            cursor: pointer;
-        }
-        #fileName {
-            margin-top: 10px;
-            color: #333;
-            font-weight: bold;
-        }
+        .btn { background: #2b6cb0; color: white; padding: 10px 25px; border: none; border-radius: 10px; margin-top: 20px; cursor: pointer; }
+        #fileName { margin-top: 10px; color: #333; font-weight: bold; }
+        #progressBar { width: 70%; max-width: 560px; margin: 16px auto; background: #e5e7eb; border-radius: 12px; height: 18px; display:none; overflow:hidden; }
+        #progress { height: 100%; width: 0%; background: #2b6cb0; border-radius: 12px; transition: width .2s; }
+        #eta { font-weight: 600; margin-top: 8px; }
     </style>
 </head>
 <body>
-    <h1>📂 Smart QR File Share</h1>
-    <p>Upload any file and get a QR + encrypted protection</p>
 
-    <form action="/upload" method="post" enctype="multipart/form-data">
-        <label class="upload-box">
-            <strong>📤 Click to select file</strong>
-            <input type="file" name="file" id="fileInput" required>
-        </label>
-        <div id="fileName"></div>
-        <br>
-        <button type="submit" class="btn">Generate QR</button>
-    </form>
+<h1>📂 Smart QR File Share</h1>
+<p>Upload any file & get encrypted QR download</p>
 
-    <script>
-        const fileInput = document.getElementById("fileInput");
-        const fileName = document.getElementById("fileName");
+<form onsubmit="return false;">
+    <label class="upload-box">
+        <strong>📤 Click to select file</strong>
+        <input type="file" id="fileInput" required>
+    </label>
+    <div id="fileName"></div>
 
-        fileInput.addEventListener("change", function() {
-            if (this.files.length > 0) {
-                fileName.textContent = "✅ Selected: " + this.files[0].name;
-            } else {
-                fileName.textContent = "";
-            }
-        });
-    </script>
+    <div id="progressBar"><div id="progress"></div></div>
+    <p id="eta"></p>
+
+    <button class="btn" onclick="startUpload()">Generate QR</button>
+</form>
+
+<script>
+const fileInput = document.getElementById("fileInput");
+const fileName = document.getElementById("fileName");
+const progressBar = document.getElementById("progressBar");
+const progress = document.getElementById("progress");
+const etaText = document.getElementById("eta");
+
+fileInput.addEventListener("change", () => {
+    if (fileInput.files.length)
+        fileName.textContent = "✅ Selected: " + fileInput.files[0].name;
+});
+
+async function startUpload() {
+    const file = fileInput.files[0];
+    if (!file) return alert("Select a file first!");
+
+    const chunkSize = 10 * 1024 * 1024;
+    const totalChunks = Math.ceil(file.size / chunkSize);
+    const fileId = Date.now().toString();
+
+    progressBar.style.display = "block";
+    let uploaded = 0;
+    let startT = Date.now();
+
+    for (let i = 0; i < totalChunks; i++) {
+        const start = i * chunkSize;
+        const chunk = file.slice(start, start + chunkSize);
+
+        let form = new FormData();
+        form.append("chunk", chunk);
+        form.append("file_id", fileId);
+        form.append("filename", file.name);
+        form.append("index", i);
+        form.append("total", totalChunks);
+
+        await fetch("/upload_chunk", { method: "POST", body: form });
+
+        uploaded++;
+        let percent = Math.round((uploaded / totalChunks) * 100);
+        progress.style.width = percent + "%";
+
+        let elapsed = (Date.now() - startT) / 1000;
+        let speed = uploaded / elapsed;
+        let remain = (totalChunks - uploaded) / speed;
+
+        etaText.textContent =
+            `⏳ ${percent}% uploaded — Est. time: ${remain.toFixed(1)}s`;
+    }
+
+    const fin = await fetch(`/finish_upload?file_id=${fileId}&filename=${file.name}`);
+    const data = await fin.json();
+
+    sessionStorage.setItem("last_upload_key", data.key);
+
+    etaText.textContent = "✅ Upload complete! Generating QR…";
+    window.location.href = `/success/${encodeURIComponent(file.name)}`;
+}
+</script>
+
 </body>
 </html>
