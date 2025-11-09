@@ -1,33 +1,52 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>QR Generated</title>
-<style>
- body{text-align:center;font-family:Arial;padding:60px;background:#f9fafc}
- .box{background:white;padding:25px;border-radius:10px;display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,.1)}
- button,a{text-decoration:none;color:white;background:#2563eb;padding:10px 22px;border-radius:8px;margin-top:10px;display:inline-block;border:none}
- .copy{background:#059669}
-</style>
+  <meta charset="UTF-8">
+  <title>QR Generated</title>
+  <style>
+    body{font-family:Arial;text-align:center;background:#f9fafc;padding:40px}
+    .card{background:#fff;padding:30px;border-radius:10px;
+      box-shadow:0 4px 15px rgba(0,0,0,.1);display:inline-block}
+    button,a{padding:10px 20px;margin-top:10px;border-radius:8px;
+      text-decoration:none;font-size:15px}
+    a{background:#2563eb;color:#fff}
+    button{background:#16a34a;color:white;border:none}
+  </style>
 </head>
 <body>
-<div class="box">
-  <h2>✅ QR Created</h2>
-  <img src="{{ url_for('static', filename='qrcodes/' + filename + '_qr.png') }}" width="240">
 
-  <p><b>Key (Save it!)</b></p>
-  <div id="k">{{ sessionStorage.last_key }}</div>
+<div class="card">
+  <h2>✅ QR Code Generated</h2>
 
-  <button class="copy" onclick="copyKey()">Copy Key</button><br>
-  <a href="/view/{{ filename }}">View File Page</a><br>
-  <a href="/">Home</a>
+  <img src="{{ qr_url }}" width="230">
+
+  <br><br>
+  <b>Key:</b> <span id="keyText">{{ key }}</span>
+  <button onclick="copyKey()">Copy</button>
+
+  <p>⚠ Save this key — without it file cannot be opened.</p>
+
+  <a href="{{ public_link }}">View File Page</a><br><br>
+
+  <button onclick="shareNow()">Share</button><br><br>
+
+  <a href="/">🏠 Home</a>
 </div>
 
 <script>
-function copyKey(){
-  navigator.clipboard.writeText(sessionStorage.getItem("last_key"));
-  alert("Copied!");
+function copyKey() {
+  navigator.clipboard.writeText(document.getElementById("keyText").innerText);
+  alert("✅ Key copied!");
+}
+
+function shareNow() {
+  const text = "File Link: {{ public_link }}\nKey: {{ key }}";
+  if(navigator.share)
+    navigator.share({text:text});
+  else
+    alert(text);
 }
 </script>
+
 </body>
 </html>

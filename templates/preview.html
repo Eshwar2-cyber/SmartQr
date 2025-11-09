@@ -1,56 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Upload</title>
-<style>
-  body{font-family:Arial;text-align:center;padding:60px;background:#f9fafc}
-  #box{background:white;padding:25px;border-radius:10px;display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,.1)}
-  button{background:#2563eb;color:white;padding:10px 20px;border:none;border-radius:8px;cursor:pointer}
-</style>
+  <meta charset="UTF-8">
+  <title>Preview File</title>
+  <style>
+    body{text-align:center;font-family:Arial;padding:50px;background:#f9fafc}
+    a{background:#2563eb;color:#fff;padding:12px 20px;
+      border-radius:8px;text-decoration:none}
+  </style>
 </head>
 <body>
 
-<div id="box">
-  <h2>📤 Upload File</h2>
-  <input type="file" id="fileInput"><br><br>
-  <button onclick="startUpload()">Upload</button>
-</div>
+<h2>✅ File Ready</h2>
+<p>You can download the unlocked file now.</p>
 
-<script>
-function startUpload(){
-  let file=document.getElementById("fileInput").files[0];
-  if(!file){alert("Select a file!");return;}
-
-  let fid=Date.now().toString();
-  let total=Math.ceil(file.size/(4*1024*1024));
-
-  let part=0;
-  function send(){
-    let chunk=file.slice(part*(4*1024*1024),(part+1)*(4*1024*1024));
-    let form=new FormData();
-    form.append("file_id",fid);
-    form.append("filename",file.name);
-    form.append("index",part);
-    form.append("chunk",chunk);
-
-    fetch("/upload_chunk",{method:"POST",body:form}).then(()=>{
-      part++;
-      if(part<total) send();
-      else finish();
-    });
-  }
-  send();
-
-  function finish(){
-    fetch(`/finish_upload?file_id=${fid}&filename=${file.name}`)
-    .then(r=>r.json()).then(d=>{
-      sessionStorage.setItem("last_key",d.key);
-      window.location=`/success/${d.file}`;
-    });
-  }
-}
-</script>
+<a href="/download/{{ filename }}">⬇ Download</a><br><br>
+<a href="/">🏠 Home</a>
 
 </body>
 </html>
