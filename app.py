@@ -179,22 +179,17 @@ def decrypt_file(filename):
 
     key = request.form.get("key", "").strip()
 
-    # Validate key format
-    try:
-        base64.urlsafe_b64decode(key.encode())
-    except:
-        return "<h2>❌ Invalid Key format.</h2><a href='/'>Home</a>"
-
     try:
         decrypted_path = os.path.join(UPLOAD_FOLDER, filename)
         decrypt_file_stream(encrypted_path, decrypted_path, key.encode())
 
-        return send_file(decrypted_path, as_attachment=True)
-
-    except InvalidToken:
-        return "<h2>❌ Wrong Key.</h2><a href='/'>Home</a>"
-    except Exception as e:
-        return f"<h2>❌ Error: {e}</h2><a href='/'>Home</a>"
+        return render_template(
+            "decrypted_success.html",   # ✅ new template after decrypt
+            filename=filename,
+            file_link=f"/uploads/{filename}"
+        )
+    except:
+        return "<h2>❌ Wrong Key</h2><a href='/'>Home</a>"
 
 
 # ==========================
