@@ -15,14 +15,16 @@ for f in [UPLOAD, ENCRYPT, QRFOLDER, CHUNKS]:
     os.makedirs(f, exist_ok=True)
 
 PUBLIC = "https://smartqr-oyjd.onrender.com"
-CHUNK_SIZE = 4 * 1024 * 1024
+CHUNK_SIZE = 4 * 1024 * 1024  # 4MB
 
+# ------ Key helpers ------
 def make_key():
     return base64.urlsafe_b64encode(os.urandom(32)).decode()
 
 def parse_key(k):
     return base64.urlsafe_b64decode(k.encode())
 
+# AES chunk format: [nonce][tag][length][ciphertext]
 NONCE_LEN = 16
 TAG_LEN = 16
 
@@ -39,6 +41,7 @@ def encrypt_stream(src, dst, keyb):
             fout.write(len(ct).to_bytes(4, "big"))
             fout.write(ct)
 
+
 def decrypt_stream(src, dst, keyb):
     with open(src, "rb") as fin, open(dst, "wb") as fout:
         while True:
@@ -54,10 +57,12 @@ def decrypt_stream(src, dst, keyb):
             cipher.verify(tag)
             fout.write(pt)
 
+# HOME
 @app.route("/")
 def index():
     return render_template("preview.html")
 
+# ---- chunk upload ----
 @app.route("/upload_chunk", methods=["POST"])
 def upload_chunk():
     file_id = request.form["file_id"]
@@ -77,7 +82,7 @@ def finish_upload():
     folder = os.path.join(CHUNKS, file_id)
 
     if not os.path.isdir(folder):
-        return jsonify({"status": "error"}), 404
+        return jsonify({"status": "error", "error": "missing upload"}), 404
 
     final_path = os.path.join(UPLOAD, filename)
     parts = sorted([f for f in os.listdir(folder) if f.endswith(".part")])
@@ -111,23 +116,27 @@ def finish_upload():
 
 @app.route("/success/<filename>")
 def success(filename):
-    qr = f"{filename}_qr.png"
-    key = request.args.get("key")
     public_link = f"{PUBLIC}/view/{filename}"
+    qr_image = f"{filename}_qr.png"
 
+    key = request.args.get("key")
+
+    # expiration
     meta = os.path.join(ENCRYPT, filename + ".meta")
-    expires = None
+    expires_in = None
     if os.path.exists(meta):
         data = json.load(open(meta))
-        expires = max(0, int((data["time"] + 86400) - time.time()))
+        expires_in = max(0, int((data["time"] + 86400) - time.time()))
+
+    # force browser load new QR version
+    qr_image = qr_image + "?v=" + str(time.time())
 
     return render_template(
         "success.html",
-        filename=filename,
-        qr_image=qr + "?v=" + str(time.time()),
-        public_link=public_link,
+        qr_image=qr_image,
         key=key,
-        expires_in=expires
+        public_link=public_link,
+        expires_in=expires_in
     )
 
 @app.route("/view/<filename>")
@@ -135,14 +144,7 @@ def view(filename):
     enc = os.path.join(ENCRYPT, filename)
     if not os.path.exists(enc):
         return render_template("404.html")
-
-    countdown = None
-    meta = os.path.join(ENCRYPT, filename + ".meta")
-    if os.path.exists(meta):
-        data = json.load(open(meta))
-        countdown = max(0, int((data["time"] + 86400) - time.time()))
-
-    return render_template("view.html", filename=filename, countdown=countdown)
+    return render_template("view.html", filename=filename)
 
 @app.route("/unlock/<filename>")
 def unlock(filename):
@@ -158,13 +160,13 @@ def decrypt(filename):
     try:
         keyb = parse_key(key)
     except:
-        return "<h2>❌ Invalid key</h2><a href='/'>Home</a>"
+        return "<h2>❌ Invalid key format</h2><a href='/'>Go Home</a>"
 
     dec = os.path.join(UPLOAD, filename)
     try:
         decrypt_stream(enc, dec, keyb)
     except:
-        return "<h2>❌ Wrong key</h2><a href='/'>Home</a>"
+        return "<h2>❌ Wrong Key</h2><a href='/'>Go Home</a>"
 
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
@@ -173,4 +175,4 @@ def serve_file(filename):
     return send_file(os.path.join(UPLOAD, filename), as_attachment=False)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)

@@ -1,79 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>QR Generated</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; background: #f9fafc; padding: 50px; }
-    .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; max-width: 520px; width: 100%; }
-    img.qr { width: 250px; height: auto; margin-top: 20px; border-radius: 8px;}
-    .btn { text-decoration:none; color:white; background:#2563eb; padding:10px 25px; border-radius:8px; display:inline-block; margin-top:10px; cursor:pointer; border:none;}
-    .btn:hover { background:#1d4ed8; }
-    .key-box { background:#e6fdf0; border:1px solid #10b981; color:#065f46; border-radius:8px; padding:12px; margin-top:15px; font-family:monospace; font-size:15px; word-break:break-all; }
-    .row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:10px;}
-    .danger { color:#e11d48; font-size:14px;}
-    .muted { color:#374151; font-size:14px; margin-top:10px;}
-  </style>
+    <meta charset="UTF-8">
+    <title>QR Code & Key Generated</title>
+    <style>
+        body { font-family: Arial, sans-serif; background:#f4f6fb; text-align:center; padding:40px; }
+        .card { width: 500px; max-width:90%; background:#fff; border-radius:14px; padding:28px; box-shadow:0 8px 25px rgba(0,0,0,.08); margin:auto; }
+        h2 { margin: 0 0 12px; color:#111; font-size:26px; }
+        img.qr { width:230px; height:auto; margin:10px auto; display:block; border-radius:8px; }
+        .keybox { background:#eefaf0; border:1px solid #cce7d0; padding:12px; border-radius:8px; font-family:monospace; word-break:break-all; margin-top:12px; font-size:15px;}
+        
+        .btn { background:#2563eb; color:white; padding:12px 20px; border:none; border-radius:8px; margin:8px; cursor:pointer; font-size:15px; }
+        .btn:hover { background:#1e4ed8; }
+        
+        .warn { color:#e11d48; margin-top:10px; }
+        .time { color:#374151; font-size:15px; margin-top:6px; }
+    </style>
 </head>
+
 <body>
-  <div class="card">
+<div class="card">
     <h2>✅ QR Code & Key Generated!</h2>
 
-    <!-- ✅ Cache-busted QR so it never breaks -->
-    <img class="qr" src="{{ url_for('static', filename='qrcodes/' + qr_image) }}?v={{ expires_in }}" alt="QR Code">
+    <img class="qr" src="/static/qrcodes/{{ qr_image }}" alt="QR Code">
 
-    <div class="key-box" id="keyBox">{{ key }}</div>
+    <div class="keybox" id="keyBox">{{ key }}</div>
 
-    <div class="row">
-      <button class="btn" onclick="copyKey()">Copy Key</button>
-      <button class="btn" onclick="shareLink()">Share Link + Key</button>
-      <a class="btn" href="{{ public_link }}" target="_blank">Open File Page</a>
-    </div>
+    <button class="btn" onclick="copyKey()">Copy Key</button>
+    <button class="btn" onclick="openPage()">Open File Page</button>
+    <button class="btn" onclick="shareBoth()">Share Link + Key</button>
 
-    <p class="danger">⚠️ Save this key — it won't show again.</p>
+    <p class="warn">⚠️ Save this key — it won't show again.</p>
 
     {% if expires_in is not none %}
-      <p class="muted">⏳ Expires in <span id="count"></span></p>
+    <p class="time">⏳ Expires in <span id="exp"></span></p>
     {% endif %}
 
-    <a class="btn" href="/">🏠 Home</a>
-  </div>
+    <button class="btn" onclick="location.href='/'">🏠 Home</button>
+</div>
 
 <script>
-  const link = "{{ public_link }}";
-  const key = "{{ key }}";
+const publicLink = "{{ public_link }}";
+const keyText = "{{ key }}";
 
-  function copyKey(){
-    navigator.clipboard.writeText(key);
-    alert("✅ Key Copied");
-  }
+function copyKey(){
+    navigator.clipboard.writeText(keyText).then(()=>alert("✅ Key copied!"));
+}
 
-  function shareLink(){
-    const text = `Download File:\n${link}\nKey: ${key}`;
-    if(navigator.share){
-      navigator.share({ text:text, url:link });
-    } else {
-      navigator.clipboard.writeText(text);
-      alert("✅ Link & Key Copied to Clipboard");
-    }
-  }
+function openPage(){
+    window.open(publicLink, "_blank");
+}
 
-  {% if expires_in is not none %}
-  let t = {{ expires_in }};
-  function timer(){
-    if(t <= 0){
-      document.getElementById("count").innerHTML = "Expired";
-      return;
-    }
-    const h = Math.floor(t/3600),
-          m = Math.floor((t%3600)/60),
-          s = t%60;
-    document.getElementById("count").innerHTML = `${h}h ${m}m ${s}s`;
+function shareBoth(){
+    const msg = `🔐 Encrypted File: ${publicLink}\n🔑 Key: ${keyText}`;
+    window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank");
+}
+
+{% if expires_in is not none %}
+let t = {{ expires_in }};
+function timer(){
+    if(t <= 0){ document.getElementById("exp").textContent = "Expired"; return; }
+    let h = Math.floor(t/3600);
+    let m = Math.floor((t%3600)/60);
+    let s = t % 60;
+    document.getElementById("exp").textContent = `${h}h ${m}m ${s}s`;
     t--;
-  }
-  timer();
-  setInterval(timer, 1000);
-  {% endif %}
+}
+timer();
+setInterval(timer, 1000);
+{% endif %}
 </script>
 
 </body>

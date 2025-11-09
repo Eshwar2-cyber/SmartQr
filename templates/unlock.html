@@ -1,40 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Enter Key</title>
-<style>
-    body { font-family: Arial, sans-serif; text-align:center; padding-top:80px; background:#f9fafc; }
-    .card {
-        background:white; padding:35px; border-radius:12px;
-        display:inline-block; box-shadow:0 6px 20px rgba(0,0,0,0.08);
-        width:350px;
-    }
-    input {
-        width:90%; padding:12px; border:1px solid #ccc;
-        border-radius:8px; font-size:15px; margin-top:10px;
-    }
-    button {
-        width:100%; margin-top:15px; padding:12px;
-        background:#2563eb; color:white; border:none; cursor:pointer;
-        border-radius:8px; font-size:15px;
-    }
-    button:hover { background:#1d4ed8; }
-    a { color:#2563eb; display:block; margin-top:12px; text-decoration:none; }
-</style>
+    <meta charset="UTF-8">
+    <title>Enter Key</title>
+    <style>
+        body { text-align:center; font-family:Arial; background:#eef2ff; padding-top:80px; }
+        .card { background:white; padding:30px; border-radius:14px;
+                box-shadow:0 6px 20px rgba(0,0,0,.1); display:inline-block; }
+        input { width:250px; padding:10px; margin:10px; border:1px solid #ccc; border-radius:8px; }
+        button { background:#2563eb; color:white; border:none; padding:10px 22px;
+                 border-radius:8px; cursor:pointer; }
+        button:hover { background:#1d4ed8; }
+    </style>
 </head>
 <body>
+    <div class="card">
+        <h2>🔑 Unlock File</h2>
 
-<div class="card">
-    <h2>🔐 Enter Decryption Key</h2>
-
-    <form method="POST" action="/decrypt/{{ filename }}">
-        <input type="text" name="key" placeholder="Enter Key..." required>
-        <button type="submit">Unlock File</button>
-    </form>
-
-    <a href="/">🏠 Home</a>
-</div>
-
+        <form method="POST" action="/decrypt/{{ filename }}">
+            <input type="text" name="key" placeholder="Enter Decryption Key" required><br>
+            <button type="submit">Unlock</button>
+        </form>
+    </div>
 </body>
 </html>
