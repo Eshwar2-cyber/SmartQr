@@ -204,7 +204,6 @@ def decrypt(filename):
 @app.route("/uploads/<filename>")
 def serve_file(filename):
     return send_file(os.path.join(UPLOAD, filename), as_attachment=False)
-
 @app.route("/success/<filename>")
 def success(filename):
     qr = f"/static/qrcodes/{filename}_qr.png"
@@ -221,13 +220,16 @@ def success(filename):
         except:
             expires_in = None
 
+    # return old style page but working
     return render_template(
         "success.html",
         filename=filename,
         qr=qr,
         public=f"{PUBLIC}/view/{filename}",
+        key=request.args.get("key"),
         expires_in=expires_in
     )
+
 
 # ✅ RUN SERVER (local)
 if __name__ == "__main__":

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>File Ready</title>
+<style>
+  body {
+    text-align:center;
+    font-family: Arial, sans-serif;
+    background:#f9fafc;
+    padding:50px;
+  }
+  .card {
+    background:white;
+    padding:30px;
+    border-radius:10px;
+    display:inline-block;
+    box-shadow:0 4px 15px rgba(0,0,0,.1);
+    max-width:450px;
+  }
+  a, button {
+    text-decoration:none;
+    background:#2563eb;
+    color:white;
+    padding:10px 22px;
+    border-radius:8px;
+    border:none;
+    cursor:pointer;
+    display:inline-block;
+    margin-top:12px;
+  }
+  a:hover, button:hover { background:#1d4ed8; }
+  .preview-box {
+    margin-top:15px;
+    padding:10px;
+    background:#f1f5f9;
+    border-radius:8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>✅ File Unlocked Successfully</h2>
+  <p>You can now preview or download the file.</p>
+
+  <!-- ✅ Preview Section -->
+  <div class="preview-box">
+    <p><strong>Preview:</strong></p>
+    <iframe src="/uploads/{{ filename }}" width="310" height="250" style="border:1px solid #ccc;"></iframe>
+  </div>
+
+  <!-- ✅ Download button -->
+  <a href="{{ download_link }}">⬇ Download File</a><br>
+
+  <a href="/">🏠 Home</a>
+</div>
+
+</body>
+</html>
+
