@@ -98,15 +98,23 @@ def finish_upload():
 def success(filename):
     qr = f"{filename}_qr.png"
     key = request.args.get("key")
-    public = f"{PUBLIC}/view/{filename}"
+    public_link = f"{PUBLIC}/view/{filename}"
 
     meta = os.path.join(ENCRYPT, filename + ".meta")
-    exp = None
+    expires = None
     if os.path.exists(meta):
-        t = json.load(open(meta)).get("time")
-        exp = max(0, int((t + 86400) - time.time()))
+        data = json.load(open(meta))
+        expires = max(0, int((data["time"] + 86400) - time.time()))
 
-    return render_template("success.html", filename=filename, qr=qr, key=key, public=public, expires_in=exp)
+    return render_template(
+        "success.html",
+        filename=filename,
+        qr_image=qr,
+        public_link=public_link,
+        key=key,
+        expires_in=expires,
+        time=time.time()   # ✅ cache-buster for QR
+    )
 
 @app.route("/view/<filename>")
 def viewfile(filename):

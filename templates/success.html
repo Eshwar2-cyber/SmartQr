@@ -1,70 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>QR Generated</title>
-<style>
-  body { font-family: Arial, sans-serif; text-align: center; background: #f9fafc; padding: 50px; }
-  .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; max-width: 520px; width: 100%; }
-  img.qr { width: 250px; height: auto; margin-top: 20px; border-radius: 8px; }
-  .btn { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; display: inline-block; margin-top: 10px; border: none; cursor: pointer; }
-  .btn:hover { background: #1d4ed8; }
-  .key-box { background: #f3f4f6; border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-top: 15px; word-break: break-all; }
-  .row { display: flex; gap: 10px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
-  .danger { color: #e11d48; font-size: 14px; }
-  .muted { color: #374151; font-size: 14px; margin-top: 10px; }
-</style>
+  <meta charset="UTF-8">
+  <title>QR Code Generated</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f9fafc; padding: 50px; }
+    .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; max-width:600px; }
+    img.qr { width: 250px; margin-top: 15px; border-radius: 10px; }
+    .key-box { background:#e6fbe6; padding:12px; border-radius:8px; word-break:break-all; }
+    .btn { background:#2563eb;color:white;padding:10px 25px;border-radius:8px;margin:5px;border:none;cursor:pointer }
+    .btn:hover{background:#1e4ed8;}
+    .danger{color:#d61f1f;margin-top:10px;}
+  </style>
 </head>
 <body>
+
 <div class="card">
   <h2>✅ QR Code & Key Generated!</h2>
 
-  <img class="qr" src="{{ url_for('static', filename='qrcodes/' + qr) }}" alt="QR Code" />
+  <img class="qr"
+       src="{{ url_for('static', filename='qrcodes/' + qr_image) }}?v={{ time }}"
+       alt="QR Code">
 
   <div class="key-box" id="keyBox">
     <strong>Your Key:</strong><br>
-    {{ key if key else 'None' }}
+    {{ key }}
   </div>
 
-  <div class="row">
-    <button class="btn" onclick="copyKey()">Copy Key</button>
-    <a class="btn" href="{{ public }}" target="_blank">View File Page</a>
-  </div>
-
+  <br>
+  <button class="btn" onclick="copyKey()">Copy Key</button>
+  <button class="btn" onclick="openLink()">Open File Page</button>
   <button class="btn" onclick="shareWhatsApp()">Share WhatsApp</button>
-  <button class="btn" onclick="shareTelegram()">Share Telegram</button>
 
   <p class="danger">⚠️ Save this key — it won't show again.</p>
 
-  {% if expires_in is not none %}
-    <p class="muted">⏳ Expires in <span id="count"></span></p>
+  {% if expires_in %}
+  <p>⏳ Expires in <span id="count"></span></p>
   {% endif %}
 
-  <a class="btn" href="/">🏠 Home</a>
+  <br>
+  <button class="btn" onclick="location.href='/'">🏠 Home</button>
 </div>
 
 <script>
-function copyKey() {
-  const txt = document.getElementById('keyBox').innerText.replace('Your Key:', '').trim();
-  navigator.clipboard.writeText(txt).then(() => alert('Key copied!'));
-}
-function shareWhatsApp(){
-  const txt = `Open: {{ public }}\nKey: {{ key }}`;
-  window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank");
-}
-function shareTelegram(){
-  const txt = `Open: {{ public }}\nKey: {{ key }}`;
-  window.open("https://t.me/share/url?url={{ public }}&text="+encodeURIComponent(txt),"_blank");
-}
-{% if expires_in is not none %}
-let t = {{ expires_in }};
-function timer(){
-  if(t<=0){ document.getElementById("count").textContent="Expired"; return; }
-  const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60;
-  document.getElementById("count").textContent=`${h}h ${m}m ${s}s`; t--;
-}
-timer(); setInterval(timer,1000);
-{% endif %}
+  function copyKey(){
+    let k = document.getElementById("keyBox").innerText.replace("Your Key:","").trim();
+    navigator.clipboard.writeText(k);
+    alert("Key Copied!");
+  }
+
+  function openLink(){
+    window.open("{{ public_link }}", "_blank");
+  }
+
+  function shareWhatsApp(){
+    const t = `File: {{ public_link }}%0AKey: ${document.getElementById("keyBox").innerText}`;
+    window.open(`https://wa.me/?text=${t}`);
+  }
+
+  {% if expires_in %}
+  let t = {{ expires_in }};
+  function timer(){
+    if(t<=0){ document.getElementById("count").innerText="Expired"; return; }
+    const h = Math.floor(t/3600), m = Math.floor((t%3600)/60), s = t%60;
+    document.getElementById("count").innerText = `${h}h ${m}m ${s}s`;
+    t--;
+  }
+  timer();
+  setInterval(timer,1000);
+  {% endif %}
 </script>
 
 </body>
