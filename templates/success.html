@@ -20,12 +20,10 @@
     <h2>✅ QR Code Generated</h2>
 
     <!-- ✅ QR ALWAYS WORKS -->
-    <img src="{{ qr_url }}" alt="QR Code" width="230">
+    <img src="{{ url_for('static', filename='qrcodes/' + filename + '_qr.png') }}" alt="QR Code" width="230">
 
-    <!-- upload time -->
     <input type="hidden" id="uploadedAt" value="{{ uploaded_at }}">
 
-    <!-- Key & Copy Button -->
     <div class="key-box" id="keyRow" style="display:none;">
         <span id="keyText"></span>
         <button class="copy-btn" id="copyBtn">Copy</button>
@@ -52,9 +50,9 @@ if (key) {
 // ✅ copy button
 copyBtn.onclick = () => navigator.clipboard.writeText(key).then(()=>alert("✅ Copied"));
 
-// ✅ share button
+// ✅ share
 function shareFile() {
-    let text = "File link: {{ public_link }}\nKey: " + key;
+    let text = "Download File:\n{{ public_link }}\nKey: " + key;
     if (navigator.share) {
         navigator.share({ text, url:"{{ public_link }}" });
     } else {
@@ -62,11 +60,10 @@ function shareFile() {
     }
 }
 
-// ✅ countdown
+// ✅ countdown timer
 const uploadedAt = parseFloat(document.getElementById("uploadedAt").value);
 function update() {
     if (!uploadedAt) return;
-
     const now = Date.now() / 1000;
     const remain = (uploadedAt + 86400) - now;
 
@@ -74,16 +71,16 @@ function update() {
         countdown.textContent = "❌ File expired";
         return;
     }
+
     const h = Math.floor(remain/3600);
     const m = Math.floor((remain%3600)/60);
     const s = Math.floor(remain%60);
     countdown.textContent = `⏳ Expires in: ${h}h ${m}m ${s}s`;
 }
-
 update();
 setInterval(update, 1000);
 
-// ✅ remove key when leaving
+// ✅ clear key after leaving
 window.addEventListener("beforeunload", ()=>sessionStorage.removeItem("last_upload_key"));
 </script>
 

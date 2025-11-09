@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, jsonify
+from flask import Flask, render_template, request, send_file, jsonify, url_for
 import os, qrcode, time, threading, shutil, json
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
@@ -86,7 +86,7 @@ def decrypt_file_stream(in_path, out_path, key):
 
 
 # ==========================
-# Finish Upload -> Encrypt -> QR
+# Finish → Encrypt → QR
 # ==========================
 @app.route("/finish_upload")
 def finish_upload():
@@ -119,7 +119,7 @@ def finish_upload():
 
         os.remove(final_path)
 
-        # ✅ Create QR (full URL used)
+        # Create QR
         file_url = f"{PUBLIC_BASE}/view/{safe_name}"
         qr_path = os.path.join(QR_FOLDER, safe_name + "_qr.png")
         qrcode.make(file_url).save(qr_path)
@@ -159,7 +159,7 @@ def unlock(filename):
 
 
 # ==========================
-# Decrypt File
+# Decrypt
 # ==========================
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt_file(filename):
@@ -177,7 +177,7 @@ def decrypt_file(filename):
 
 
 # ==========================
-# ✅ SUCCESS PAGE (QR FIXED)
+# ✅ SUCCESS PAGE (QR ALWAYS WORKS)
 # ==========================
 @app.route("/success/<filename>")
 def success_page(filename):
@@ -189,43 +189,38 @@ def success_page(filename):
         except:
             uploaded_at = None
 
-    # ✅ QR always loads correctly
-    qr_url = f"https://smartqr-pe0z.onrender.com/static/qrcodes/{filename}_qr.png"
-
     return render_template(
         "success.html",
         filename=filename,
-        qr_url=qr_url,
         public_link=f"{PUBLIC_BASE}/view/{filename}",
         uploaded_at=uploaded_at
     )
 
 
 # ==========================
-# Auto Cleanup (24 hrs)
+# Auto Cleanup (24hrs)
 # ==========================
-def cleanup_worker(folders, retention_seconds=86400, interval=600):
+def cleanup_worker():
     while True:
         now = time.time()
-        for folder in folders:
+        for folder in [UPLOAD_FOLDER, ENCRYPTED_FOLDER, QR_FOLDER, CHUNKS_FOLDER]:
             try:
                 for f in os.listdir(folder):
                     path = os.path.join(folder, f)
-                    if os.path.isfile(path) and now - os.path.getmtime(path) > retention_seconds:
-                        os.remove(path)
-                    elif os.path.isdir(path) and now - os.path.getmtime(path) > retention_seconds:
-                        shutil.rmtree(path, ignore_errors=True)
+                    if now - os.path.getmtime(path) > 86400:  # 24 hrs
+                        if os.path.isfile(path):
+                            os.remove(path)
+                        else:
+                            shutil.rmtree(path, ignore_errors=True)
             except:
                 pass
-        time.sleep(interval)
+        time.sleep(600)  # 10 mins
 
 
-threading.Thread(
-    target=cleanup_worker,
-    args=([UPLOAD_FOLDER, ENCRYPTED_FOLDER, QR_FOLDER, CHUNKS_FOLDER],),
-    daemon=True
-).start()
+threading.Thread(target=cleanup_worker, daemon=True).start()
 
-
+# ==========================
+# Run
+# ==========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
