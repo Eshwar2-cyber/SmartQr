@@ -17,7 +17,7 @@ for f in [UPLOAD, ENCRYPT, STATIC, QRFOLDER, CHUNKS]:
     os.makedirs(f, exist_ok=True)
 
 PUBLIC = "https://smartqr-oyjd.onrender.com"
-CHUNK_SIZE = 1 * 1024 * 1024  # 1MB
+CHUNK_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 def make_key():
