@@ -20,7 +20,9 @@
 
     <!-- IMPORTANT: PUBLIC + qrcodes + cache bust -->
     <img class="qr"
-     src="{{ url_for('static', filename='qrcodes/' + qr_image) }}?v={{ uuid }}">
+     src="{{ url_for('static', filename='qrcodes/' + qr_image) }}?v={{ uuid }}"
+     alt="QR Code">
+
 
 
     <div class="key-box" id="keyBox">
