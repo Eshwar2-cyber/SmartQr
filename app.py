@@ -108,11 +108,13 @@ def success(filename):
         expires = max(0, int((data["time"] + 86400) - time.time()))
 
     return render_template(
-        "success.html",
-        filename=filename,
-        qr_image=qr_image,
-        uuid=uuid.uuid4().hex,
-        public=PUBLIC,
-        key=key,
-        expires_in=expires
-    )
+    "success.html",
+    filename=filename,
+    qr_image=qr,
+    uuid=uuid.uuid4().hex,     # ✅ required!
+    public=PUBLIC,
+    public_link=public_link,
+    key=key,
+    expires_in=expires
+)
+
