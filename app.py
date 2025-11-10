@@ -175,10 +175,45 @@ def decrypt(filename):
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
 
+from flask import Response
+
 @app.route("/uploads/<filename>")
 def serve_file(filename):
     filename = secure_filename(filename)
-    return send_file(os.path.join(UPLOAD, filename), as_attachment=False)
+    path = os.path.join(UPLOAD, filename)
+
+    if not os.path.exists(path):
+        return render_template("404.html")
+
+    file_size = os.path.getsize(path)
+    range_header = request.headers.get("Range")
+
+    if range_header:
+        # Parse byte range: "bytes=start-end"
+        range_match = range_header.replace("bytes=", "").split("-")
+        start = int(range_match[0])
+        end = file_size - 1 if range_match[1] == "" else int(range_match[1])
+        length = end - start + 1
+
+        with open(path, "rb") as f:
+            f.seek(start)
+            data = f.read(length)
+
+        rv = Response(data,
+                      206,
+                      mimetype="video/mp4",
+                      content_type="video/mp4",
+                      direct_passthrough=True,
+                      headers={
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(length)
+        })
+        return rv
+
+    # If no range header, send whole file
+    return send_file(path, as_attachment=False)
+
 
 
 if __name__ == "__main__":
