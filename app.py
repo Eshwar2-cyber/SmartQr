@@ -28,21 +28,31 @@ def parse_key(k):
     return base64.urlsafe_b64decode(k.encode())
 
 
-# ✅ New AES-CTR streaming encryption (video safe)
+# ✅ FIXED AES-CTR STREAMING (Perfect for video)
 def encrypt_stream(src, dst, keyb):
     with open(src, "rb") as fin, open(dst, "wb") as fout:
         cipher = AES.new(keyb, AES.MODE_CTR)
-        fout.write(cipher.nonce)  # save once
+        nonce = cipher.nonce
+
+        # ✅ save nonce length + nonce
+        fout.write(len(nonce).to_bytes(1, "big"))
+        fout.write(nonce)
+
         while True:
             data = fin.read(CHUNK_SIZE)
             if not data:
                 break
             fout.write(cipher.encrypt(data))
 
+
 def decrypt_stream(src, dst, keyb):
     with open(src, "rb") as fin, open(dst, "wb") as fout:
-        nonce = fin.read(8)
+        # ✅ read nonce length + nonce
+        nonce_len = int.from_bytes(fin.read(1), "big")
+        nonce = fin.read(nonce_len)
+
         cipher = AES.new(keyb, AES.MODE_CTR, nonce=nonce)
+
         while True:
             data = fin.read(CHUNK_SIZE)
             if not data:
@@ -55,7 +65,7 @@ def index():
     return render_template("preview.html")
 
 
-# ✅ Supports resume — does NOT rewrite existing chunk
+# ✅ Resume & Skip existing chunks
 @app.route("/upload_chunk", methods=["POST"])
 def upload_chunk():
     file_id = request.form["file_id"]
@@ -68,7 +78,6 @@ def upload_chunk():
 
     chunk_path = os.path.join(folder, f"{index:08d}.part")
 
-    # ✅ Skip if exists
     if os.path.exists(chunk_path):
         return "OK", 200
 
@@ -88,7 +97,7 @@ def finish_upload():
     final_path = os.path.join(UPLOAD, filename)
     parts = sorted([p for p in os.listdir(folder) if p.endswith(".part")])
 
-    # ✅ merge chunks
+    # ✅ Merge chunks
     with open(final_path, "wb") as out:
         for p in parts:
             with open(os.path.join(folder, p), "rb") as ch:
@@ -104,7 +113,7 @@ def finish_upload():
     encrypt_stream(final_path, enc_path, keyb)
     os.remove(final_path)
 
-    # ✅ save timestamp
+    # ✅ Save timestamp
     with open(enc_path + ".meta", "w") as f:
         json.dump({"time": time.time()}, f)
 
@@ -185,7 +194,6 @@ def decrypt(filename):
     except:
         return "<h2>❌ Wrong key</h2><a href='/'>Home</a>"
 
-    # ✅ send preview page
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
 
