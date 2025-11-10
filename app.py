@@ -17,10 +17,9 @@ for f in [UPLOAD, ENCRYPT, STATIC, QRFOLDER, CHUNKS]:
     os.makedirs(f, exist_ok=True)
 
 PUBLIC = "https://smartqr-oyjd.onrender.com"
-CHUNK_SIZE = 1 * 1024 * 1024  # 1MB chunk
+CHUNK_SIZE = 1 * 1024 * 1024  # 1MB
 
 
-# ✅ Generate and parse keys
 def make_key():
     return Fernet.generate_key().decode()
 
@@ -28,7 +27,7 @@ def parse_key(k):
     return k.encode()
 
 
-# ✅ Correct Streaming Fernet Encryption (chunk-compatible)
+# ✅ Chunk-compatible Fernet encryption
 def encrypt_stream(src, dst, key):
     f = Fernet(key)
     with open(src, "rb") as fin, open(dst, "wb") as fout:
@@ -41,7 +40,7 @@ def encrypt_stream(src, dst, key):
             fout.write(token)
 
 
-# ✅ Correct Streaming Fernet Decryption (matches encrypted layout)
+# ✅ Chunk-compatible Fernet decryption
 def decrypt_stream(src, dst, key):
     f = Fernet(key)
     with open(src, "rb") as fin, open(dst, "wb") as fout:
@@ -59,7 +58,7 @@ def index():
     return render_template("preview.html")
 
 
-# ✅ Chunk Upload (supports resume and large files)
+# ✅ Chunk upload with resume
 @app.route("/upload_chunk", methods=["POST"])
 def upload_chunk():
     file_id = request.form["file_id"]
@@ -71,18 +70,17 @@ def upload_chunk():
     os.makedirs(folder, exist_ok=True)
 
     part_path = os.path.join(folder, f"{index:08d}.part")
-
     if os.path.exists(part_path):
         return "OK", 200
 
     chunk.stream.seek(0)
-    with open(part_path, "wb") as out:
-        shutil.copyfileobj(chunk.stream, out)
+    with open(part_path, "wb") as f:
+        shutil.copyfileobj(chunk.stream, f)
 
     return "OK", 200
 
 
-# ✅ Merge chunks, encrypt, save QR
+# ✅ Merge chunks, encrypt, create QR
 @app.route("/finish_upload")
 def finish_upload():
     file_id = request.args.get("file_id")
@@ -90,9 +88,8 @@ def finish_upload():
     folder = os.path.join(CHUNKS, file_id)
 
     if not os.path.isdir(folder):
-        return jsonify({"status": "error", "error": "missing chunks"}), 404
+        return jsonify({"status": "error"}), 404
 
-    # Merge chunks into single file
     merged_path = os.path.join(UPLOAD, filename)
     parts = sorted([p for p in os.listdir(folder) if p.endswith(".part")])
 
@@ -103,17 +100,14 @@ def finish_upload():
 
     shutil.rmtree(folder)
 
-    # Encrypt merged file
     key = make_key()
     enc_path = os.path.join(ENCRYPT, filename)
     encrypt_stream(merged_path, enc_path, parse_key(key))
     os.remove(merged_path)
 
-    # Save metadata (expiry)
     with open(enc_path + ".meta", "w") as f:
         json.dump({"time": time.time()}, f)
 
-    # Generate QR
     qr_name = f"{filename}_qr.png"
     qrcode.make(f"{PUBLIC}/view/{filename}").save(os.path.join(QRFOLDER, qr_name))
 
@@ -133,7 +127,6 @@ def success(filename):
     qr_image = f"{filename}_qr.png"
     public_link = f"{PUBLIC}/view/{filename}"
 
-    # expiry
     meta = os.path.join(ENCRYPT, filename + ".meta")
     expires = None
     if os.path.exists(meta):
@@ -164,7 +157,7 @@ def unlock(filename):
     return render_template("unlock.html", filename=secure_filename(filename))
 
 
-# ✅ Decrypt file back to original
+# ✅ Decrypt
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt(filename):
     filename = secure_filename(filename)
@@ -185,7 +178,7 @@ def decrypt(filename):
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
 
-# ✅ UNIVERSAL STREAMING SERVER (Video, PDF, Images preview)
+# ✅ UNIVERSAL STREAMING & CLEAN DOWNLOADS
 @app.route("/uploads/<filename>")
 def serve_file(filename):
     filename = secure_filename(filename)
@@ -196,7 +189,16 @@ def serve_file(filename):
 
     mimetype = mimetypes.guess_type(path)[0] or "application/octet-stream"
 
-    # ✅ Video streaming with range support
+    # ✅ If ?download=1 → force correct filename on all phones
+    if request.args.get("download") == "1":
+        return send_file(
+            path,
+            mimetype=mimetype,
+            as_attachment=True,
+            download_name=filename    # ✅ important fix
+        )
+
+    # ✅ Video streaming for browsers
     if mimetype.startswith("video/"):
         file_size = os.path.getsize(path)
         range_header = request.headers.get("Range")
@@ -231,8 +233,25 @@ def serve_file(filename):
             }
         )
 
-    # ✅ PDF, image, audio, text preview
-    return send_file(path, mimetype=mimetype, as_attachment=False)
+    # ✅ PDF / Image preview inline
+    return send_file(
+        path,
+        mimetype=mimetype,
+        as_attachment=False,
+        download_name=filename
+    )
+
+
+# ✅ HEAD route for stubborn browsers
+@app.route("/uploads/<filename>", methods=["HEAD"])
+def head_file(filename):
+    filename = secure_filename(filename)
+    path = os.path.join(UPLOAD, filename)
+    mimetype = mimetypes.guess_type(path)[0] or "video/mp4"
+    return Response(headers={
+        "Accept-Ranges": "bytes",
+        "Content-Type": mimetype
+    })
 
 
 if __name__ == "__main__":

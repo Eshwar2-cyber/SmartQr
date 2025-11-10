@@ -20,36 +20,36 @@ body { font-family: Arial; text-align:center; background:#f9fafc; padding:40px; 
 <div class="card">
 <h2>✅ File Decrypted Successfully!</h2>
 
-<!-- ✅ VIDEO PREVIEW -->
-{% if link.endswith(".mp4") or link.endswith(".mkv") or link.endswith(".mov") or link.endswith(".webm") %}
+{% set lower = link.lower() %}
+
+<!-- ✅ VIDEO -->
+{% if lower.endswith(".mp4") or lower.endswith(".mkv") or lower.endswith(".mov") or lower.endswith(".webm") %}
   <video controls preload="auto" style="width:95%;border-radius:10px;">
     <source src="{{ link }}">
   </video>
 
-<!-- ✅ PDF PREVIEW -->
-{% elif link.endswith(".pdf") %}
+<!-- ✅ PDF -->
+{% elif lower.endswith(".pdf") %}
   <iframe src="{{ link }}" style="width:95%;height:600px;border:1px solid #ddd;border-radius:10px;"></iframe>
 
-<!-- ✅ IMAGE PREVIEW -->
-{% elif link.endswith(".png") or link.endswith(".jpg") or link.endswith(".jpeg") %}
+<!-- ✅ IMAGE -->
+{% elif lower.endswith(".png") or lower.endswith(".jpg") or lower.endswith(".jpeg") %}
   <img src="{{ link }}" style="width:95%;border-radius:10px;">
 
-<!-- ✅ AUDIO PREVIEW -->
-{% elif link.endswith(".mp3") or link.endswith(".wav") %}
+<!-- ✅ AUDIO -->
+{% elif lower.endswith(".mp3") or lower.endswith(".wav") %}
   <audio controls style="width:95%;">
     <source src="{{ link }}">
   </audio>
 
-<!-- ✅ TEXT PREVIEW -->
-{% elif link.endswith(".txt") %}
+<!-- ✅ TEXT -->
+{% elif lower.endswith(".txt") %}
   <iframe src="{{ link }}" style="width:95%;height:400px;border:1px solid #ccc;border-radius:10px;"></iframe>
 
-<!-- ✅ OTHER FILES → Download -->
-{% else %}
-  <p>File ready for download:</p>
 {% endif %}
 
-<a class="btn" href="{{ link }}" download>⬇ Download File</a>
+<!-- ✅ Always allow proper, FIXED download -->
+<a class="btn" href="{{ link }}?download=1">⬇ Download File</a>
 <br><br>
 <a class="btn" href="/">🏠 Home</a>
 
