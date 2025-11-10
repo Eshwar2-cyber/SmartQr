@@ -88,18 +88,19 @@ def finish_upload():
     qrcode.make(f"{PUBLIC}/view/{filename}").save(qr_full_path)
 
     return jsonify({
-        "status": "ok",
-        "key": key,
-        "qr": qr_name,
-        "public_link": f"{PUBLIC}/view/{filename}",
-        "filename": filename
-    })
+    "status": "ok",
+    "key": key,
+    "qr_image": qr_name,
+    "public_link": f"{PUBLIC}/view/{filename}",
+    "filename": filename
+})
+
 
 @app.route("/success/<filename>")
 def success(filename):
-    qr_image = f"{filename}_qr.png"
+    qr = f"{filename}_qr.png"
+    key = request.args.get("key")  # ✅ read key from URL
     public_link = f"{PUBLIC}/view/{filename}"
-    key = request.args.get("key")
 
     meta = os.path.join(ENCRYPT, filename + ".meta")
     expires = None
@@ -111,10 +112,8 @@ def success(filename):
     "success.html",
     filename=filename,
     qr_image=qr,
-    uuid=uuid.uuid4().hex,     # ✅ required!
+    uuid=uuid.uuid4().hex,   # ✅ IMPORTANT
     public=PUBLIC,
-    public_link=public_link,
     key=key,
     expires_in=expires
 )
-

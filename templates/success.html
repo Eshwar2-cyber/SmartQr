@@ -19,7 +19,9 @@
     <h2>✅ QR Code & Key Generated!</h2>
 
     <!-- IMPORTANT: PUBLIC + qrcodes + cache bust -->
-    <img class="qr" src="{{ public }}/static/qrcodes/{{ qr_image }}?v={{ uuid }}" alt="QR Code"/>
+    <img class="qr"
+     src="{{ url_for('static', filename='qrcodes/' + qr_image) }}?v={{ uuid }}">
+
 
     <div class="key-box" id="keyBox">
       <strong>Your Key:</strong><br>
