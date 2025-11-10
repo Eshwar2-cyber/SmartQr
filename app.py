@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, send_file, jsonify
 import os, qrcode, base64, time, shutil, json, uuid
 from werkzeug.utils import secure_filename
 from Cryptodome.Cipher import AES
+from Cryptodome.Random import get_random_bytes
 
 app = Flask(__name__)
 
@@ -17,7 +18,8 @@ for f in [UPLOAD, ENCRYPT, STATIC, QRFOLDER, CHUNKS]:
     os.makedirs(f, exist_ok=True)
 
 PUBLIC = "https://smartqr-oyjd.onrender.com"
-CHUNK_SIZE = 1 * 1024 * 1024  # 1MB chunks
+CHUNK_SIZE = 1 * 1024 * 1024  # 1MB safer chunks
+
 
 def make_key():
     return base64.urlsafe_b64encode(os.urandom(32)).decode()
@@ -25,40 +27,35 @@ def make_key():
 def parse_key(k):
     return base64.urlsafe_b64decode(k.encode())
 
-NONCE_LEN = 16
-TAG_LEN = 16
 
+# ✅ New AES-CTR streaming encryption (video safe)
 def encrypt_stream(src, dst, keyb):
     with open(src, "rb") as fin, open(dst, "wb") as fout:
+        cipher = AES.new(keyb, AES.MODE_CTR)
+        fout.write(cipher.nonce)  # save once
         while True:
             data = fin.read(CHUNK_SIZE)
             if not data:
                 break
-            cipher = AES.new(keyb, AES.MODE_EAX)
-            ct, tag = cipher.encrypt_and_digest(data)
-            fout.write(cipher.nonce)
-            fout.write(tag)
-            fout.write(len(ct).to_bytes(4, "big"))
-            fout.write(ct)
+            fout.write(cipher.encrypt(data))
 
 def decrypt_stream(src, dst, keyb):
     with open(src, "rb") as fin, open(dst, "wb") as fout:
+        nonce = fin.read(8)
+        cipher = AES.new(keyb, AES.MODE_CTR, nonce=nonce)
         while True:
-            nonce = fin.read(NONCE_LEN)
-            if not nonce:
+            data = fin.read(CHUNK_SIZE)
+            if not data:
                 break
-            tag = fin.read(TAG_LEN)
-            size = int.from_bytes(fin.read(4), "big")
-            ct = fin.read(size)
-            cipher = AES.new(keyb, AES.MODE_EAX, nonce=nonce)
-            pt = cipher.decrypt(ct)
-            cipher.verify(tag)
-            fout.write(pt)
+            fout.write(cipher.decrypt(data))
+
 
 @app.route("/")
 def index():
     return render_template("preview.html")
 
+
+# ✅ Supports resume — does NOT rewrite existing chunk
 @app.route("/upload_chunk", methods=["POST"])
 def upload_chunk():
     file_id = request.form["file_id"]
@@ -68,8 +65,16 @@ def upload_chunk():
 
     folder = os.path.join(CHUNKS, file_id)
     os.makedirs(folder, exist_ok=True)
-    chunk.save(os.path.join(folder, f"{index:08d}.part"))
+
+    chunk_path = os.path.join(folder, f"{index:08d}.part")
+
+    # ✅ Skip if exists
+    if os.path.exists(chunk_path):
+        return "OK", 200
+
+    chunk.save(chunk_path)
     return "OK", 200
+
 
 @app.route("/finish_upload")
 def finish_upload():
@@ -81,8 +86,9 @@ def finish_upload():
         return jsonify({"status": "error"}), 404
 
     final_path = os.path.join(UPLOAD, filename)
-    parts = sorted([f for f in os.listdir(folder) if f.endswith(".part")])
+    parts = sorted([p for p in os.listdir(folder) if p.endswith(".part")])
 
+    # ✅ merge chunks
     with open(final_path, "wb") as out:
         for p in parts:
             with open(os.path.join(folder, p), "rb") as ch:
@@ -90,19 +96,21 @@ def finish_upload():
 
     shutil.rmtree(folder)
 
+    # ✅ Encrypt using CTR
     key = make_key()
     keyb = parse_key(key)
+    enc_path = os.path.join(ENCRYPT, filename)
 
-    enc = os.path.join(ENCRYPT, filename)
-    encrypt_stream(final_path, enc, keyb)
+    encrypt_stream(final_path, enc_path, keyb)
     os.remove(final_path)
 
-    with open(enc + ".meta", "w") as f:
+    # ✅ save timestamp
+    with open(enc_path + ".meta", "w") as f:
         json.dump({"time": time.time()}, f)
 
+    # ✅ Generate QR
     qr_name = f"{filename}_qr.png"
-    qr_path = os.path.join(QRFOLDER, qr_name)
-    qrcode.make(f"{PUBLIC}/view/{filename}").save(qr_path)
+    qrcode.make(f"{PUBLIC}/view/{filename}").save(os.path.join(QRFOLDER, qr_name))
 
     return jsonify({
         "status": "ok",
@@ -112,10 +120,10 @@ def finish_upload():
         "filename": filename
     })
 
+
 @app.route("/success/<filename>")
 def success(filename):
     filename = secure_filename(filename)
-
     qr_image = f"{filename}_qr.png"
     public_link = f"{PUBLIC}/view/{filename}"
     key = request.args.get("key")
@@ -126,7 +134,7 @@ def success(filename):
         try:
             with open(meta, "r") as f:
                 data = json.load(f)
-            expires = max(0, int((data.get("time", 0) + 86400) - time.time()))
+            expires = max(0, int((data["time"] + 86400) - time.time()))
         except:
             expires = None
 
@@ -140,6 +148,7 @@ def success(filename):
         uuid=uuid.uuid4().hex
     )
 
+
 @app.route("/view/<filename>")
 def view(filename):
     filename = secure_filename(filename)
@@ -148,18 +157,20 @@ def view(filename):
         return render_template("404.html")
     return render_template("view.html", filename=filename)
 
+
 @app.route("/unlock/<filename>")
 def unlock(filename):
     filename = secure_filename(filename)
     return render_template("unlock.html", filename=filename)
 
+
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt(filename):
     filename = secure_filename(filename)
     key = request.form.get("key")
-    enc = os.path.join(ENCRYPT, filename)
+    enc_path = os.path.join(ENCRYPT, filename)
 
-    if not os.path.exists(enc):
+    if not os.path.exists(enc_path):
         return render_template("404.html")
 
     try:
@@ -167,19 +178,22 @@ def decrypt(filename):
     except:
         return "<h2>❌ Invalid key</h2><a href='/'>Home</a>"
 
-    dec = os.path.join(UPLOAD, filename)
+    dec_path = os.path.join(UPLOAD, filename)
 
     try:
-        decrypt_stream(enc, dec, keyb)
+        decrypt_stream(enc_path, dec_path, keyb)
     except:
         return "<h2>❌ Wrong key</h2><a href='/'>Home</a>"
 
+    # ✅ send preview page
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
+
 
 @app.route("/uploads/<filename>")
 def serve_file(filename):
     filename = secure_filename(filename)
     return send_file(os.path.join(UPLOAD, filename), as_attachment=False)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
