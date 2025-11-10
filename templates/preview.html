@@ -1,18 +1,152 @@
-etaText.innerHTML = "🔐 Encrypting & Generating QR…";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Upload & Encrypt</title>
+<style>
+  body{font-family:Arial;text-align:center;padding:50px;background:#f9fafc}
+  .box{
+    border:2px dashed #2563eb;
+    padding:40px;
+    border-radius:15px;
+    background:#fff;
+    display:inline-block;
+    cursor:pointer;
+    width:300px;
+  }
+  input[type=file]{display:none}
+  .btn{
+    background:#2563eb;
+    color:white;
+    padding:10px 25px;
+    border-radius:8px;
+    margin-top:25px;
+    cursor:pointer;
+    border:none;
+  }
+  #progressBar{
+    width:70%;
+    max-width:500px;
+    margin:25px auto;
+    height:18px;
+    background:#e5e7eb;
+    border-radius:10px;
+    overflow:hidden;
+    display:none
+  }
+  #progress{
+    height:100%;
+    width:0;
+    background:#2563eb;
+    transition:.15s
+  }
+  #fileInfo{font-size:14px;color:#333;margin-top:10px}
+  #eta{font-weight:bold;margin-top:10px}
+</style>
+</head>
+<body>
 
-// ✅ tell server to process in background
-await fetch(`/finish_upload?file_id=${fileId}&filename=${encodeURIComponent(safeName)}`);
+<h2>📤 Upload & Encrypt</h2>
 
-async function checkStatus(){
-  let r = await fetch(`/status/${fileId}`);
-  let d = await r.json();
+<label class="box">
+  <strong>📁 Choose File</strong><br><br>
+  <small>(Any size, uploads in chunks)</small>
+  <input type="file" id="fileInput">
+</label>
 
-  if(d.status === "done"){
-    etaText.innerHTML = "✅ Complete! Redirecting…";
-    window.location.href = `/success/${encodeURIComponent(d.filename)}?key=${encodeURIComponent(d.key)}`;
-  } else {
-    setTimeout(checkStatus, 2000);
+<p id="fileInfo"></p>
+
+<div id="progressBar">
+  <div id="progress"></div>
+</div>
+
+<p id="eta"></p>
+
+<button class="btn" onclick="startUpload()">Start Upload</button>
+
+<script>
+const fileInput = document.getElementById("fileInput");
+const fileInfo = document.getElementById("fileInfo");
+const progress = document.getElementById("progress");
+const progressBar = document.getElementById("progressBar");
+const etaText = document.getElementById("eta");
+
+const chunkSize = 5 * 1024 * 1024; // 5MB
+
+fileInput.addEventListener("change",()=>{
+  if(fileInput.files.length){
+    let f = fileInput.files[0];
+    fileInfo.innerHTML = `✅ Selected: <b>${f.name}</b><br>📦 ${(f.size/1024/1024).toFixed(2)} MB`;
+  }
+});
+
+async function uploadChunk(form){
+  while(true){
+    try{
+      const r = await fetch("/upload_chunk",{method:"POST", body:form});
+      if(r.ok) return;
+    }catch(e){}
+    await new Promise(res=>setTimeout(res,1500));
   }
 }
 
-checkStatus();
+async function startUpload(){
+  const file = fileInput.files[0];
+  if(!file) return alert("Select a file first!");
+
+  const safeName = file.name.replace(/[^\w.-]/g, "_");
+  const totalChunks = Math.ceil(file.size / chunkSize);
+  const fileId = Date.now().toString();
+
+  progressBar.style.display = "block";
+  let uploaded = 0;
+  let started = Date.now();
+
+  for(let i=0;i<totalChunks;i++){
+    let start = i * chunkSize;
+    let blob = file.slice(start, start + chunkSize);
+
+    let form = new FormData();
+    form.append("file_id", fileId);
+    form.append("filename", safeName);
+    form.append("index", i);
+    form.append("chunk", blob);
+
+    await uploadChunk(form);
+
+    uploaded++;
+    let percent = Math.round((uploaded / totalChunks) * 100);
+    progress.style.width = percent + "%";
+
+    let elapsed = (Date.now() - started) / 1000;
+    let speed = uploaded / elapsed;
+    let remain = totalChunks - uploaded;
+    let eta = remain / speed;
+
+    etaText.innerHTML = `⏳ ${percent}% — Est: ${eta.toFixed(1)}s`;
+  }
+
+  etaText.innerHTML = "🔐 Encrypting & Generating QR…";
+
+  // ✅ tell server to start processing
+  await fetch(`/finish_upload?file_id=${fileId}&filename=${encodeURIComponent(safeName)}`);
+
+  // ✅ Poll status
+  async function checkStatus(){
+    let r = await fetch(`/status/${fileId}`);
+    let d = await r.json();
+
+    if(d.status === "done"){
+      etaText.innerHTML = "✅ Complete! Redirecting…";
+      window.location.href = `/success/${encodeURIComponent(d.filename)}?key=${encodeURIComponent(d.key)}`;
+    } else {
+      setTimeout(checkStatus, 2000);
+    }
+  }
+
+  checkStatus();
+}
+</script>
+
+</body>
+</html>
