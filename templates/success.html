@@ -4,30 +4,26 @@
   <meta charset="UTF-8" />
   <title>QR Generated</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; background: #f9fafc; padding: 50px; }
+    body { font-family: Arial; text-align: center; background: #f9fafc; padding: 50px; }
     .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; max-width: 520px; width: 100%; }
     img.qr { width: 250px; height: auto; margin-top: 20px; border-radius: 8px; }
-    .key-box { background: #ecfdf5; border: 2px solid #bbf7d0; border-radius: 8px; padding: 12px; margin: 15px auto; width: 90%; font-family: monospace; }
     a.btn, button.btn { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; display: inline-block; margin-top: 15px; border: none; cursor: pointer; }
     a.btn:hover, button.btn:hover { background: #1d4ed8; }
-    .row { display: flex; gap: 10px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
-    .danger { color: #e11d48; font-size: 14px; margin-top: 12px; }
+    .key-box { background: #e8ffe8; border: 1px solid #6fc16f; border-radius: 8px; padding: 12px; margin-top: 15px; word-break: break-all; }
+    .row { display: flex; gap: 10px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+    .danger { color: #e11d48; font-size: 15px; margin-top: 5px; }
   </style>
 </head>
 <body>
   <div class="card">
     <h2>✅ QR Code & Key Generated!</h2>
 
-    <!-- IMPORTANT: PUBLIC + qrcodes + cache bust -->
     <img class="qr"
-     src="{{ url_for('static', filename='qrcodes/' + qr_image) }}?v={{ uuid }}"
-     alt="QR Code">
-
-
+         src="{{ url_for('static', filename='qrcodes/' + qr_image) }}?v={{ uuid }}"
+         alt="QR Code">
 
     <div class="key-box" id="keyBox">
-      <strong>Your Key:</strong><br>
-      {{ key }}
+      <b>Your Key:</b><br>{{ key }}
     </div>
 
     <div class="row">
@@ -35,16 +31,34 @@
       <a class="btn" href="{{ public_link }}" target="_blank">Open File Page</a>
     </div>
 
-    <p class="danger">⚠️ Save this key — it won't show again.</p>
+    <p class="danger">⚠ Save this key — it won't show again.</p>
+
+    {% if expires_in is not none %}
+    <p>⏳ Expires in <span id="count"></span></p>
+    {% endif %}
 
     <a class="btn" href="/">🏠 Home</a>
   </div>
 
 <script>
 function copyKey(){
-  const txt = document.getElementById('keyBox').innerText.replace('Your Key:', '').trim();
-  navigator.clipboard.writeText(txt).then(()=>alert("Copied!"));
+  let txt = document.getElementById("keyBox").innerText.replace("Your Key:","").trim();
+  navigator.clipboard.writeText(txt);
+  alert("✅ Key Copied!");
 }
+
+{% if expires_in is not none %}
+let t = {{ expires_in }};
+function timer(){
+  let c = document.getElementById("count");
+  if(t <= 0){ c.textContent = "Expired"; return;}
+  let h = Math.floor(t/3600), m = Math.floor((t%3600)/60), s = t%60;
+  c.textContent = `${h}h ${m}m ${s}s`;
+  t--;
+}
+timer();
+setInterval(timer, 1000);
+{% endif %}
 </script>
 </body>
 </html>
