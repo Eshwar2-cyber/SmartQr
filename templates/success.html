@@ -1,64 +1,65 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>QR Generated</title>
-  <style>
-    body { font-family: Arial; text-align: center; background: #f9fafc; padding: 50px; }
-    .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; max-width: 520px; width: 100%; }
-    img.qr { width: 250px; height: auto; margin-top: 20px; border-radius: 8px; }
-    a.btn, button.btn { text-decoration: none; color: white; background: #2563eb; padding: 10px 25px; border-radius: 8px; display: inline-block; margin-top: 15px; border: none; cursor: pointer; }
-    a.btn:hover, button.btn:hover { background: #1d4ed8; }
-    .key-box { background: #e8ffe8; border: 1px solid #6fc16f; border-radius: 8px; padding: 12px; margin-top: 15px; word-break: break-all; }
-    .row { display: flex; gap: 10px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
-    .danger { color: #e11d48; font-size: 15px; margin-top: 5px; }
-  </style>
+<meta charset="UTF-8">
+<title>QR Generated</title>
+<style>
+  body { font-family: Arial; text-align: center; background: #f9fafc; padding: 50px; }
+  .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; max-width: 520px; width: 100%; }
+  img.qr { width: 250px; height: auto; margin-top: 20px; border-radius: 8px; }
+  button.btn, a.btn { background:#2563eb;color:white;padding:10px 25px;border-radius:8px;margin-top:15px;cursor:pointer;border:none;text-decoration:none;display:inline-block }
+  .key-box { background:#e9ffe9;border:1px solid #bfefbf;border-radius:8px;padding:10px;margin-top:15px;word-break:break-all }
+  .danger { color:#e11d48;font-size:14px;margin-top:10px }
+</style>
 </head>
 <body>
-  <div class="card">
-    <h2>✅ QR Code & Key Generated!</h2>
 
-    <img class="qr"
-         src="{{ url_for('static', filename='qrcodes/' + qr_image) }}?v={{ uuid }}"
-         alt="QR Code">
+<div class="card">
+  <h2>✅ QR Code & Key Generated!</h2>
 
-    <div class="key-box" id="keyBox">
-      <b>Your Key:</b><br>{{ key }}
-    </div>
+  <!-- ✅ Correct working QR path -->
+  <img class="qr"
+       src="/static/qrcodes/{{ qr_image }}?v={{ uuid }}"
+       alt="QR Code">
 
-    <div class="row">
-      <button class="btn" onclick="copyKey()">Copy Key</button>
-      <a class="btn" href="{{ public_link }}" target="_blank">Open File Page</a>
-    </div>
-
-    <p class="danger">⚠ Save this key — it won't show again.</p>
-
-    {% if expires_in is not none %}
-    <p>⏳ Expires in <span id="count"></span></p>
-    {% endif %}
-
-    <a class="btn" href="/">🏠 Home</a>
+  <div class="key-box" id="keyBox">
+    <strong>Your Key:</strong><br>{{ key }}
   </div>
+
+  <br>
+
+  <button class="btn" onclick="copyKey()">Copy Key</button>
+  <a class="btn" href="{{ public_link }}" target="_blank">Open File Page</a>
+
+  <p class="danger">⚠ Save this key — it won't show again.</p>
+
+  {% if expires_in is not none %}
+  <p>⏳ Expires in <span id="count"></span></p>
+  {% endif %}
+
+  <a class="btn" href="/">🏠 Home</a>
+</div>
 
 <script>
 function copyKey(){
-  let txt = document.getElementById("keyBox").innerText.replace("Your Key:","").trim();
-  navigator.clipboard.writeText(txt);
-  alert("✅ Key Copied!");
+  const text = document.getElementById("keyBox").innerText.replace("Your Key:", "").trim();
+  navigator.clipboard.writeText(text);
+  alert("Key copied!");
 }
 
 {% if expires_in is not none %}
-let t = {{ expires_in }};
+let t={{ expires_in }};
 function timer(){
-  let c = document.getElementById("count");
-  if(t <= 0){ c.textContent = "Expired"; return;}
-  let h = Math.floor(t/3600), m = Math.floor((t%3600)/60), s = t%60;
-  c.textContent = `${h}h ${m}m ${s}s`;
+  const el=document.getElementById("count");
+  if(t<=0){ el.innerText="Expired"; return; }
+  const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
+  el.innerText=`${h}h ${m}m ${s}s`;
   t--;
 }
 timer();
 setInterval(timer, 1000);
 {% endif %}
 </script>
+
 </body>
 </html>
