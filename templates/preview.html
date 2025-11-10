@@ -5,55 +5,92 @@
 <title>Upload File</title>
 <style>
   body{font-family:Arial;text-align:center;padding:50px;background:#f9fafc}
-  .box{border:2px dashed #2563eb;padding:40px;border-radius:15px;background:#fff;display:inline-block;cursor:pointer}
+  .box{
+    border:2px dashed #2563eb;
+    padding:40px;
+    border-radius:15px;
+    background:#fff;
+    display:inline-block;
+    cursor:pointer;
+    width:300px;
+  }
   input[type=file]{display:none}
-  .btn{background:#2563eb;color:white;padding:10px 25px;border-radius:8px;margin-top:20px;cursor:pointer}
-  #progressBar{width:70%;max-width:500px;margin:20px auto;height:16px;background:#e5e7eb;border-radius:10px;overflow:hidden;display:none}
-  #progress{height:100%;width:0;background:#2563eb;transition:.2s}
-  #eta{font-weight:bold;margin-top:8px}
+  .btn{
+    background:#2563eb;
+    color:white;
+    padding:10px 25px;
+    border-radius:8px;
+    margin-top:25px;
+    cursor:pointer;
+    border:none;
+  }
+  #progressBar{
+    width:70%;
+    max-width:500px;
+    margin:25px auto;
+    height:18px;
+    background:#e5e7eb;
+    border-radius:10px;
+    overflow:hidden;
+    display:none
+  }
+  #progress{
+    height:100%;
+    width:0;
+    background:#2563eb;
+    transition:.15s
+  }
+  #fileInfo{font-size:14px;color:#333;margin-top:10px}
+  #eta{font-weight:bold;margin-top:10px}
 </style>
 </head>
 <body>
 
-<h2>📤 Upload Encrypted File</h2>
+<h2>📤 Upload & Encrypt</h2>
 
 <label class="box">
-  <strong>📁 Choose File</strong><br>
+  <strong>📁 Choose File</strong><br><br>
+  <small>(Any size, uploads in chunks)</small>
   <input type="file" id="fileInput">
 </label>
 
-<p id="fileName"></p>
+<p id="fileInfo"></p>
 
-<div id="progressBar"><div id="progress"></div></div>
+<div id="progressBar">
+  <div id="progress"></div>
+</div>
+
 <p id="eta"></p>
 
 <button class="btn" onclick="startUpload()">Start Upload</button>
 
 <script>
 const fileInput = document.getElementById("fileInput");
-const fileName = document.getElementById("fileName");
+const fileInfo = document.getElementById("fileInfo");
 const progress = document.getElementById("progress");
 const progressBar = document.getElementById("progressBar");
 const etaText = document.getElementById("eta");
 
-// ✅ CHUNK SIZE 1MB (safer)
-const chunkSize = 1 * 1024 * 1024;
+// ✅ Safer 1MB chunks
+const chunkSize = 1024 * 1024;
 
 fileInput.addEventListener("change",()=>{
-  if(fileInput.files.length)
-    fileName.innerHTML = "✅ Selected: " + fileInput.files[0].name;
+  if(fileInput.files.length){
+    let f = fileInput.files[0];
+    fileInfo.innerHTML = `✅ Selected: <b>${f.name}</b><br>📦 ${(f.size/1024/1024).toFixed(2)} MB`;
+  }
 });
 
-async function uploadChunk(fd) {
+// ✅ retry a chunk until stored
+async function uploadChunk(form){
   while(true){
-    try {
-      const r = await fetch("/upload_chunk",{method:"POST",body:fd});
-      if(r.ok) return; // success
-    } catch(e){
-      console.log("Retrying...");
+    try{
+      const r = await fetch("/upload_chunk",{method:"POST", body:form});
+      if(r.ok) return;
+    }catch(e){
+      console.log("Network issue… retrying");
     }
-    // 🔁 wait 2 sec & retry
-    await new Promise(res=>setTimeout(res,2000));
+    await new Promise(res=>setTimeout(res,1500));
   }
 }
 
@@ -66,41 +103,44 @@ async function startUpload(){
 
   progressBar.style.display = "block";
   let uploaded = 0;
-  let startTime = Date.now();
+  let started = Date.now();
 
-  for(let i=0; i<totalChunks; i++){
-    const start = i * chunkSize;
-    const chunk = file.slice(start, start + chunkSize);
+  for(let i=0;i<totalChunks;i++){
+    let start = i * chunkSize;
+    let blob = file.slice(start, start + chunkSize);
 
     let form = new FormData();
-    form.append("chunk", chunk);
     form.append("file_id", fileId);
     form.append("filename", file.name);
     form.append("index", i);
+    form.append("chunk", blob);
 
-    await uploadChunk(form); // ✅ auto retry & resume
+    await uploadChunk(form);
 
     uploaded++;
-    const percent = Math.round((uploaded/totalChunks)*100);
+    let percent = Math.round((uploaded / totalChunks) * 100);
     progress.style.width = percent + "%";
 
-    let elapsed = (Date.now() - startTime)/1000;
-    let speed = uploaded / elapsed;
-    let remain = (totalChunks - uploaded) / speed;
-    etaText.innerHTML = `⏳ ${percent}% — Est time: ${remain.toFixed(1)}s`;
+    // ETA calculation
+    let elapsed = (Date.now() - started) / 1000;
+    let speed = uploaded / elapsed; // chunks per sec
+    let remainChunks = totalChunks - uploaded;
+    let eta = remainChunks / speed;
+
+    etaText.innerHTML = `⏳ ${percent}% — Est: ${eta.toFixed(1)}s`;
   }
 
-  // ✅ tell server to merge & encrypt
+  etaText.innerHTML = "🔐 Encrypting & Generating QR…";
+
   const resp = await fetch(`/finish_upload?file_id=${fileId}&filename=${encodeURIComponent(file.name)}`);
   const data = await resp.json();
 
   if(data.status !== "ok"){
-    return alert("❌ Server Error: " + (data.error || "unknown"));
+    return alert("❌ Server error: " + (data.error || "unknown"));
   }
 
   etaText.innerHTML = "✅ Upload complete! Redirecting...";
   window.location.href = `/success/${encodeURIComponent(file.name)}?key=${encodeURIComponent(data.key)}`;
-
 }
 </script>
 

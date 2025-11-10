@@ -12,12 +12,12 @@ STATIC = os.path.join(BASE, "static")
 QRFOLDER = os.path.join(STATIC, "qrcodes")
 CHUNKS = os.path.join(BASE, "chunks")
 
-# ✅ Make sure folders exist
+# ✅ Ensure folders exist
 for f in [UPLOAD, ENCRYPT, STATIC, QRFOLDER, CHUNKS]:
     os.makedirs(f, exist_ok=True)
 
 PUBLIC = "https://smartqr-oyjd.onrender.com"
-CHUNK_SIZE = 1 * 1024 * 1024  # 1MB safer chunks
+CHUNK_SIZE = 1 * 1024 * 1024  # 1MB chunks
 
 def make_key():
     return base64.urlsafe_b64encode(os.urandom(32)).decode()
@@ -112,45 +112,50 @@ def finish_upload():
         "filename": filename
     })
 
-
 @app.route("/success/<filename>")
 def success(filename):
-    key = request.args.get("key")
+    filename = secure_filename(filename)
+
     qr_image = f"{filename}_qr.png"
+    public_link = f"{PUBLIC}/view/{filename}"
+    key = request.args.get("key")
 
     meta = os.path.join(ENCRYPT, filename + ".meta")
     expires = None
     if os.path.exists(meta):
-        data = json.load(open(meta))
-        expires = max(0, int((data["time"] + 86400) - time.time()))
+        try:
+            with open(meta, "r") as f:
+                data = json.load(f)
+            expires = max(0, int((data.get("time", 0) + 86400) - time.time()))
+        except:
+            expires = None
 
     return render_template(
-    "success.html",
-    filename=filename,
-    qr_image=qr,
-    public_link=public_link,
-    key=key,
-    expires_in=expires,
-    uuid=uuid.uuid4().hex   # ✅ cache buster
-)
-
-
+        "success.html",
+        filename=filename,
+        qr_image=qr_image,
+        public_link=public_link,
+        key=key,
+        expires_in=expires,
+        uuid=uuid.uuid4().hex
+    )
 
 @app.route("/view/<filename>")
 def view(filename):
+    filename = secure_filename(filename)
     enc = os.path.join(ENCRYPT, filename)
     if not os.path.exists(enc):
         return render_template("404.html")
     return render_template("view.html", filename=filename)
 
-
 @app.route("/unlock/<filename>")
 def unlock(filename):
+    filename = secure_filename(filename)
     return render_template("unlock.html", filename=filename)
-
 
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt(filename):
+    filename = secure_filename(filename)
     key = request.form.get("key")
     enc = os.path.join(ENCRYPT, filename)
 
@@ -171,11 +176,10 @@ def decrypt(filename):
 
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
-
 @app.route("/uploads/<filename>")
 def serve_file(filename):
+    filename = secure_filename(filename)
     return send_file(os.path.join(UPLOAD, filename), as_attachment=False)
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
