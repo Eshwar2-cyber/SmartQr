@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, send_file, jsonify, Response
-import os, qrcode, time, shutil, json, uuid, mimetypes
+import os, qrcode, time, shutil, json, uuid, mimetypes, traceback
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet, InvalidToken
 from threading import Thread
@@ -20,8 +20,7 @@ for p in [UPLOAD, ENCRYPT, STATIC, QRFOLDER, CHUNKS]:
 # ---------- Config ----------
 PUBLIC     = "https://smartqr-oyjd.onrender.com"
 CHUNK_SIZE = 5 * 1024 * 1024  # 5MB
-tasks: dict[str, dict] = {}   # file_id -> {"status", "key", "filename", "error"}
-
+tasks      = {}  # file_id -> {"status", "key", "filename", "error"}
 
 # ---------- Helpers ----------
 def make_key() -> str:
@@ -41,19 +40,31 @@ def encrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
             fout.write(len(token).to_bytes(4, "big"))
             fout.write(token)
 
+# ✅ SAFE FOR 500MB+ DECRYPT
 def decrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
     f = Fernet(key)
     with open(src_path, "rb") as fin, open(dst_path, "wb") as fout:
         while True:
-            size_b = fin.read(4)
-            if not size_b:
+            size_bytes = fin.read(4)
+            if not size_bytes:
                 break
-            size = int.from_bytes(size_b, "big")
-            token = fin.read(size)
+
+            size = int.from_bytes(size_bytes, "big")
+
+            # read encrypted token in small chunks (max 1MB each)
+            remaining = size
+            token_parts = []
+            while remaining > 0:
+                part = fin.read(min(1024 * 1024, remaining))
+                if not part:
+                    raise InvalidToken("Encrypted data incomplete")
+                token_parts.append(part)
+                remaining -= len(part)
+
+            token = b"".join(token_parts)
             fout.write(f.decrypt(token))
 
-
-# ---------- Background job ----------
+# ---------- Background Job ----------
 def process_file(file_id: str, filename: str) -> None:
     try:
         folder      = os.path.join(CHUNKS, file_id)
@@ -62,7 +73,7 @@ def process_file(file_id: str, filename: str) -> None:
 
         parts = sorted(p for p in os.listdir(folder) if p.endswith(".part"))
 
-        # Merge
+        # MERGE
         with open(merged_path, "wb") as out:
             for p in parts:
                 with open(os.path.join(folder, p), "rb") as ch:
@@ -70,28 +81,28 @@ def process_file(file_id: str, filename: str) -> None:
 
         shutil.rmtree(folder, ignore_errors=True)
 
-        # Encrypt
+        # ENCRYPT
         key = make_key()
         encrypt_stream(merged_path, enc_path, parse_key(key))
 
         try:
             os.remove(merged_path)
-        except FileNotFoundError:
+        except:
             pass
 
-        # Meta with key
+        # META save key + time
         with open(enc_path + ".meta", "w") as f:
             json.dump({"time": time.time(), "key": key}, f)
 
-        # QR
+        # QR IMAGE
         qr_name = f"{filename}_qr.png"
         qrcode.make(f"{PUBLIC}/view/{filename}").save(os.path.join(QRFOLDER, qr_name))
 
         tasks[file_id] = {"status": "done", "key": key, "filename": filename}
-    except Exception as e:
-        app.logger.error(f"[process_file] {filename} failed: {e}")
-        tasks[file_id] = {"status": "error", "error": str(e), "filename": filename}
 
+    except Exception as e:
+        app.logger.error("[process_file] " + traceback.format_exc())
+        tasks[file_id] = {"status": "error", "error": str(e), "filename": filename}
 
 # ---------- Routes ----------
 @app.route("/")
@@ -123,7 +134,7 @@ def finish_upload():
     file_id  = request.args.get("file_id")
     filename = secure_filename(request.args.get("filename"))
 
-    tasks[file_id] = {"status": "processing", "filename": filename}
+    tasks[file_id] = {"status": "processing"}
     Thread(target=process_file, args=(file_id, filename), daemon=True).start()
     return jsonify({"status": "processing"})
 
@@ -143,16 +154,17 @@ def success(filename):
         if os.path.exists(meta_path):
             try:
                 key = json.load(open(meta_path)).get("key")
-            except Exception:
+            except:
                 key = None
 
+    # expiration (24 hrs)
     expires = None
     meta = os.path.join(ENCRYPT, filename + ".meta")
     if os.path.exists(meta):
         try:
             data = json.load(open(meta))
             expires = max(0, int((data["time"] + 86400) - time.time()))
-        except Exception:
+        except:
             expires = None
 
     return render_template("success.html",
@@ -183,34 +195,28 @@ def decrypt(filename):
 
     meta_path = enc_path + ".meta"
     if not os.path.exists(meta_path):
-        return "<h2>❌ Meta not found (old upload). Re-upload the file.</h2><a href='/'>Home</a>"
+        return "<h2>❌ Meta missing. Re-upload the file.</h2><a href='/'>Home</a>"
 
-    # Read meta & key
     try:
         meta = json.load(open(meta_path))
         real_key = meta.get("key")
-    except Exception:
+    except:
         return "<h2>❌ Meta corrupted</h2><a href='/'>Home</a>"
-
-    if not real_key:
-        return "<h2>❌ Key missing in meta (old upload). Re-upload the file.</h2><a href='/'>Home</a>"
 
     entered = request.form.get("key", "")
     if entered != real_key:
         return "<h2>❌ Wrong key</h2><a href='/'>Home</a>"
 
     dec_path = os.path.join(UPLOAD, filename)
+
     try:
         decrypt_stream(enc_path, dec_path, parse_key(real_key))
     except InvalidToken:
-        # explicit cryptography error → wrong/partial data
-        if os.path.exists(dec_path):
-            os.remove(dec_path)
-        return "<h2>❌ Decrypt failed (invalid token). Try re-uploading.</h2><a href='/'>Home</a>"
+        if os.path.exists(dec_path): os.remove(dec_path)
+        return "<h2>❌ Invalid token. File corrupted or wrong key.</h2><a href='/'>Home</a>"
     except Exception as e:
-        app.logger.error(f"[decrypt] {filename} failed: {e}")
-        if os.path.exists(dec_path):
-            os.remove(dec_path)
+        app.logger.error("[decrypt] " + traceback.format_exc())
+        if os.path.exists(dec_path): os.remove(dec_path)
         return f"<h2>❌ Decrypt error: {str(e)}</h2><a href='/'>Home</a>"
 
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
@@ -228,22 +234,28 @@ def serve_file(filename):
         return send_file(path, mimetype=mimetype, as_attachment=True, download_name=filename)
 
     if mimetype.startswith("video/"):
+        size = os.path.getsizeof(path)
         file_size = os.path.getsize(path)
         rng = request.headers.get("Range")
+
         if rng:
             a, b = rng.replace("bytes=", "").split("-")
             start = int(a) if a else 0
             end = file_size - 1 if not b else int(b)
             length = end - start + 1
+
             with open(path, "rb") as f:
                 f.seek(start)
                 data = f.read(length)
+
             return Response(data, 206, mimetype=mimetype, headers={
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(length)
             })
-        return Response(open(path, "rb").read(), mimetype=mimetype,
+
+        return Response(open(path, "rb").read(),
+                        mimetype=mimetype,
                         headers={"Content-Length": str(file_size), "Accept-Ranges": "bytes"})
 
     return send_file(path, mimetype=mimetype, as_attachment=False, download_name=filename)
@@ -254,7 +266,6 @@ def head_file(filename):
     path = os.path.join(UPLOAD, filename)
     mimetype = mimetypes.guess_type(path)[0] or "video/mp4"
     return Response(headers={"Accept-Ranges": "bytes", "Content-Type": mimetype})
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
