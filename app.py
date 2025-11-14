@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
-import os, qrcode, time, shutil, json, uuid, mimetypes, traceback
+import os, qrcode, time, shutil, json, uuid, mimetypes, traceback, hashlib
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet, InvalidToken
 from threading import Thread
@@ -49,9 +49,9 @@ def decrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
                 break
 
             size = int.from_bytes(size_bytes, "big")
-
             remaining = size
             token_parts = []
+
             while remaining > 0:
                 part = fin.read(min(1024 * 1024, remaining))
                 if not part:
@@ -98,9 +98,9 @@ def process_file(file_id: str, filename: str) -> None:
 
         tasks[file_id] = {"status": "done", "key": key, "filename": filename}
 
-    except Exception as e:
+    except Exception:
         app.logger.error("[process_file] " + traceback.format_exc())
-        tasks[file_id] = {"status": "error", "error": str(e), "filename": filename}
+        tasks[file_id] = {"status": "error", "filename": filename}
 
 # ---------- Routes ----------
 @app.route("/")
@@ -150,20 +150,13 @@ def success(filename):
     if not key:
         meta_path = os.path.join(ENCRYPT, filename + ".meta")
         if os.path.exists(meta_path):
-            try:
-                key = json.load(open(meta_path)).get("key")
-            except:
-                key = None
+            key = json.load(open(meta_path)).get("key")
 
-    # expiration (24 hrs)
     expires = None
     meta = os.path.join(ENCRYPT, filename + ".meta")
     if os.path.exists(meta):
-        try:
-            data = json.load(open(meta))
-            expires = max(0, int((data["time"] + 86400) - time.time()))
-        except:
-            expires = None
+        data = json.load(open(meta))
+        expires = max(0, int((data["time"] + 86400) - time.time()))
 
     return render_template("success.html",
                            filename=filename,
@@ -188,128 +181,191 @@ def unlock(filename):
 def decrypt(filename):
     filename = secure_filename(filename)
     enc_path = os.path.join(ENCRYPT, filename)
+
     if not os.path.exists(enc_path):
-        return "<h2>❌ Encrypted file missing</h2><a href='/'>Home</a>"
+        return "<h2>❌ Encrypted file missing</h2>"
 
     meta_path = enc_path + ".meta"
     if not os.path.exists(meta_path):
-        return "<h2>❌ Meta missing. Re-upload the file.</h2><a href='/'>Home</a>"
+        return "<h2>❌ Meta missing. Re-upload.</h2>"
 
-    try:
-        meta = json.load(open(meta_path))
-        real_key = meta.get("key")
-    except:
-        return "<h2>❌ Meta corrupted</h2><a href='/'>Home</a>"
+    meta = json.load(open(meta_path))
+    real_key = meta.get("key")
 
     entered = request.form.get("key", "")
     if entered != real_key:
-        return "<h2>❌ Wrong key</h2><a href='/'>Home</a>"
+        return "<h2>❌ Wrong key</h2>"
 
     dec_path = os.path.join(UPLOAD, filename)
 
     try:
         decrypt_stream(enc_path, dec_path, parse_key(real_key))
-    except InvalidToken:
+    except Exception:
         if os.path.exists(dec_path): os.remove(dec_path)
-        return "<h2>❌ Invalid token. File corrupted or wrong key.</h2><a href='/'>Home</a>"
-    except Exception as e:
-        app.logger.error("[decrypt] " + traceback.format_exc())
-        if os.path.exists(dec_path): os.remove(dec_path)
-        return f"<h2>❌ Decrypt error: {str(e)}</h2><a href='/'>Home</a>"
+        return "<h2>❌ File corrupted or wrong key</h2>"
 
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
-# ---------- Helper: stream a byte range ----------
+# ---------- Range Helper ----------
 def stream_file_range(path, start, end):
     length = end - start + 1
     def generator():
         with open(path, "rb") as f:
             f.seek(start)
             remaining = length
-            chunk_size = 64 * 1024
             while remaining > 0:
-                read_size = min(chunk_size, remaining)
-                data = f.read(read_size)
-                if not data:
+                chunk = f.read(min(64 * 1024, remaining))
+                if not chunk:
                     break
-                remaining -= len(data)
-                yield data
+                remaining -= len(chunk)
+                yield chunk
     return generator()
 
-# ------------------------------------------
-# 7️⃣ SERVE FILES (Preview + Robust Range Streaming)
-# ------------------------------------------
+# ---------- FILE SERVER ----------
 @app.route("/uploads/<path:filename>")
 def serve_file(filename):
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
+
     if not os.path.exists(path):
         return render_template("404.html")
 
-    # force a safe binary MIME default
-    guessed = mimetypes.guess_type(path)[0]
-    mimetype = guessed or "application/octet-stream"
-
+    mimetype = mimetypes.guess_type(path)[0] or "application/octet-stream"
     file_size = os.path.getsize(path)
-    range_header = request.headers.get('Range', None)
-    download_param = request.args.get("download") == "1"
+    range_header = request.headers.get("Range")
+    download = request.args.get("download") == "1"
 
-    # If client requested a byte range, serve partial content (works for all types)
+    # Handle Range Request
     if range_header:
-        # Parse range: expecting "bytes=start-end"
-        try:
-            range_value = range_header.strip().split('=')[1]
-            start_str, end_str = range_value.split('-')
-            start = int(start_str) if start_str else 0
-            end = int(end_str) if end_str else file_size - 1
-            if end >= file_size:
-                end = file_size - 1
-            if start > end:
-                return Response(status=416)
-        except Exception:
-            # Bad Range header
-            return Response(status=416)
+        bytes_range = range_header.split("=")[1]
+        start, end = bytes_range.split("-")
+        start = int(start) if start else 0
+        end = int(end) if end else file_size - 1
+        if end >= file_size:
+            end = file_size - 1
 
-        length = end - start + 1
         generator = stream_file_range(path, start, end)
 
         headers = {
             "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Content-Length": str(end - start + 1),
             "Accept-Ranges": "bytes",
-            "Content-Length": str(length),
-            "Content-Type": mimetype,
-            "Content-Encoding": "identity"
+            "Content-Encoding": "identity",
+            "Content-Type": mimetype
         }
-        return Response(stream_with_context(generator), status=206, headers=headers, mimetype=mimetype)
+        return Response(stream_with_context(generator), status=206, headers=headers)
 
-    # No Range header: either stream whole file or send as attachment based on request
-    # If user explicitly asked for download, send as attachment; otherwise for common previewable types allow inline.
-    inline_types = ("text/", "image/", "application/pdf", "audio/", "video/")
-    as_attachment = download_param or not any(mimetype.startswith(p) for p in inline_types)
+    response = send_file(
+        path,
+        mimetype=mimetype,
+        as_attachment=True if download else False,
+        download_name=filename
+    )
 
-    # Use send_file for simple full response but ensure correct headers for binary safety
-    response = send_file(path, mimetype=mimetype, as_attachment=as_attachment, download_name=filename)
-    # Ensure these headers exist to prevent browser from modifying bytes
     response.headers["Accept-Ranges"] = "bytes"
     response.headers["Content-Encoding"] = "identity"
-    # Content-Length is already set by send_file / WSGI, but ensure present
     response.headers["Content-Length"] = str(file_size)
     return response
 
 @app.route("/uploads/<filename>", methods=["HEAD"])
-def head_file(filename):
+def head(filename):
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
     if not os.path.exists(path):
         return Response(status=404)
 
-    guessed = mimetypes.guess_type(path)[0]
-    mimetype = guessed or "application/octet-stream"
-    headers = {"Accept-Ranges": "bytes", "Content-Type": mimetype}
-    return Response(headers=headers)
+    return Response(headers={
+        "Accept-Ranges": "bytes",
+        "Content-Type": "application/octet-stream"
+    })
 
-# ------------------------------------------
-# Run
-# ------------------------------------------
+# ---------- Diagnostics ----------
+@app.route("/file_hash/<filename>")
+def file_hash(filename):
+    filename = secure_filename(filename)
+    path = os.path.join(ENCRYPT, filename)
+    if not os.path.exists(path):
+        return jsonify({"ok": False, "error": "file-not-found"}), 404
+
+    h = hashlib.sha256()
+    size = 0
+
+    with open(path, "rb") as f:
+        while True:
+            c = f.read(1024 * 1024)
+            if not c:
+                break
+            h.update(c)
+            size += len(c)
+
+    return jsonify({"ok": True, "size": size, "sha256": h.hexdigest()})
+
+@app.route("/check_key", methods=["POST"])
+def check_key():
+    data = request.get_json(force=True)
+    filename = secure_filename(data.get("filename"))
+    key = data.get("key")
+
+    path = os.path.join(ENCRYPT, filename)
+    if not os.path.exists(path):
+        return jsonify({"ok": False, "error": "file-not-found"}), 404
+
+    try:
+        with open(path, "rb") as f:
+            size_bytes = f.read(4)
+            size = int.from_bytes(size_bytes, "big")
+            token = f.read(size)
+
+        Fernet(key.encode()).decrypt(token)
+        return jsonify({"ok": True, "valid": True})
+
+    except Exception:
+        return jsonify({"ok": True, "valid": False})
+
+@app.route("/meta/<filename>")
+def meta(filename):
+    filename = secure_filename(filename)
+    p = os.path.join(ENCRYPT, filename + ".meta")
+    if not os.path.exists(p):
+        return jsonify({"ok": False, "error": "meta-not-found"}), 404
+
+    return jsonify({"ok": True, "meta": json.load(open(p))})
+
+@app.route("/compare_upload", methods=["POST"])
+def compare_upload():
+    uploaded = request.files.get("file")
+    fname = secure_filename(request.form.get("filename"))
+    server_path = os.path.join(ENCRYPT, fname)
+
+    if not os.path.exists(server_path):
+        return jsonify({"ok": False, "error": "server-file-not-found"}), 404
+
+    h_up = hashlib.sha256()
+    uploaded.stream.seek(0)
+    up_size = 0
+    while True:
+        c = uploaded.stream.read(1024 * 1024)
+        if not c:
+            break
+        h_up.update(c)
+        up_size += len(c)
+
+    h_srv = hashlib.sha256()
+    srv_size = 0
+    with open(server_path, "rb") as f:
+        while True:
+            c = f.read(1024 * 1024)
+            if not c:
+                break
+            h_srv.update(c)
+            srv_size += len(c)
+
+    return jsonify({
+        "uploaded": {"size": up_size, "sha256": h_up.hexdigest()},
+        "server": {"size": srv_size, "sha256": h_srv.hexdigest()},
+        "match": h_up.hexdigest() == h_srv.hexdigest()
+    })
+
+# ---------- Run ----------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
