@@ -50,7 +50,7 @@ function timer(){
   const el=document.getElementById("count");
   if(t<=0){ el.innerText="Expired"; return; }
   const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
-  el.innerText=${h}h ${m}m ${s}s;
+  el.innerText=`${h}h ${m}m ${s}s`;
   t--;
 }
 timer();
