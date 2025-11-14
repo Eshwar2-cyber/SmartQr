@@ -30,6 +30,7 @@ def parse_key(k: str) -> bytes:
     return k.encode()
 
 def encrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
+    """Chunked encryption (safe for 10GB files)."""
     f = Fernet(key)
     with open(src_path, "rb") as fin, open(dst_path, "wb") as fout:
         while True:
@@ -40,32 +41,30 @@ def encrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
             fout.write(len(token).to_bytes(4, "big"))
             fout.write(token)
 
-# ✅ SAFE FOR 500MB+ DECRYPT
 def decrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
+    """Chunked decrypt (safe for large files)."""
     f = Fernet(key)
     with open(src_path, "rb") as fin, open(dst_path, "wb") as fout:
         while True:
             size_bytes = fin.read(4)
             if not size_bytes:
                 break
-
             size = int.from_bytes(size_bytes, "big")
 
-            # read encrypted token in small chunks (max 1MB each)
             remaining = size
-            token_parts = []
+            parts = []
             while remaining > 0:
                 part = fin.read(min(1024 * 1024, remaining))
                 if not part:
-                    raise InvalidToken("Encrypted data incomplete")
-                token_parts.append(part)
+                    raise InvalidToken("Encrypted data incomplete.")
+                parts.append(part)
                 remaining -= len(part)
 
-            token = b"".join(token_parts)
+            token = b"".join(parts)
             fout.write(f.decrypt(token))
 
 # ---------- Background Job ----------
-def process_file(file_id: str, filename: str) -> None:
+def process_file(file_id: str, filename: str):
     try:
         folder      = os.path.join(CHUNKS, file_id)
         merged_path = os.path.join(UPLOAD, filename)
@@ -73,7 +72,7 @@ def process_file(file_id: str, filename: str) -> None:
 
         parts = sorted(p for p in os.listdir(folder) if p.endswith(".part"))
 
-        # MERGE
+        # MERGE CHUNKS
         with open(merged_path, "wb") as out:
             for p in parts:
                 with open(os.path.join(folder, p), "rb") as ch:
@@ -90,11 +89,11 @@ def process_file(file_id: str, filename: str) -> None:
         except:
             pass
 
-        # META save key + time
+        # META (key + time)
         with open(enc_path + ".meta", "w") as f:
             json.dump({"time": time.time(), "key": key}, f)
 
-        # QR IMAGE
+        # QR
         qr_name = f"{filename}_qr.png"
         qrcode.make(f"{PUBLIC}/view/{filename}").save(os.path.join(QRFOLDER, qr_name))
 
@@ -102,13 +101,20 @@ def process_file(file_id: str, filename: str) -> None:
 
     except Exception as e:
         app.logger.error("[process_file] " + traceback.format_exc())
-        tasks[file_id] = {"status": "error", "error": str(e), "filename": filename}
+        tasks[file_id] = {"status": "error", "error": str(e)}
 
 # ---------- Routes ----------
 @app.route("/")
-def index():
+def home():
+    return render_template("index.html")
+
+@app.route("/preview")
+def preview():
     return render_template("preview.html")
 
+# ------------------------------------------
+# 1️⃣ RECEIVE CHUNKS
+# ------------------------------------------
 @app.route("/upload_chunk", methods=["POST"])
 def upload_chunk():
     file_id  = request.form["file_id"]
@@ -120,6 +126,8 @@ def upload_chunk():
     os.makedirs(folder, exist_ok=True)
 
     part_path = os.path.join(folder, f"{index:08d}.part")
+
+    # Avoid overwriting already uploaded parts
     if os.path.exists(part_path):
         return "OK", 200
 
@@ -129,6 +137,9 @@ def upload_chunk():
 
     return "OK", 200
 
+# ------------------------------------------
+# 2️⃣ FINISH UPLOAD → ENCRYPT + QR GENERATE
+# ------------------------------------------
 @app.route("/finish_upload")
 def finish_upload():
     file_id  = request.args.get("file_id")
@@ -136,12 +147,19 @@ def finish_upload():
 
     tasks[file_id] = {"status": "processing"}
     Thread(target=process_file, args=(file_id, filename), daemon=True).start()
+
     return jsonify({"status": "processing"})
 
+# ------------------------------------------
+# 3️⃣ STATUS CHECK
+# ------------------------------------------
 @app.route("/status/<file_id>")
 def status(file_id):
     return jsonify(tasks.get(file_id, {"status": "unknown"}))
 
+# ------------------------------------------
+# 4️⃣ SUCCESS PAGE
+# ------------------------------------------
 @app.route("/success/<filename>")
 def success(filename):
     filename    = secure_filename(filename)
@@ -149,20 +167,21 @@ def success(filename):
     qr_image    = f"{filename}_qr.png"
     public_link = f"{PUBLIC}/view/{filename}"
 
+    # fetch key from meta if missing
     if not key:
-        meta_path = os.path.join(ENCRYPT, filename + ".meta")
-        if os.path.exists(meta_path):
+        meta = os.path.join(ENCRYPT, filename + ".meta")
+        if os.path.exists(meta):
             try:
-                key = json.load(open(meta_path)).get("key")
+                key = json.load(open(meta)).get("key")
             except:
                 key = None
 
-    # expiration (24 hrs)
+    # 24-hour expiration
     expires = None
-    meta = os.path.join(ENCRYPT, filename + ".meta")
-    if os.path.exists(meta):
+    meta_path = os.path.join(ENCRYPT, filename + ".meta")
+    if os.path.exists(meta_path):
         try:
-            data = json.load(open(meta))
+            data = json.load(open(meta_path))
             expires = max(0, int((data["time"] + 86400) - time.time()))
         except:
             expires = None
@@ -175,6 +194,9 @@ def success(filename):
                            expires_in=expires,
                            uuid=uuid.uuid4().hex)
 
+# ------------------------------------------
+# 5️⃣ VIEW PAGE (Enter Key)
+# ------------------------------------------
 @app.route("/view/<filename>")
 def view(filename):
     filename = secure_filename(filename)
@@ -186,24 +208,25 @@ def view(filename):
 def unlock(filename):
     return render_template("unlock.html", filename=secure_filename(filename))
 
+# ------------------------------------------
+# 6️⃣ DECRYPT
+# ------------------------------------------
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt(filename):
     filename = secure_filename(filename)
     enc_path = os.path.join(ENCRYPT, filename)
+
     if not os.path.exists(enc_path):
         return "<h2>❌ Encrypted file missing</h2><a href='/'>Home</a>"
 
     meta_path = enc_path + ".meta"
     if not os.path.exists(meta_path):
-        return "<h2>❌ Meta missing. Re-upload the file.</h2><a href='/'>Home</a>"
+        return "<h2>❌ Meta missing</h2><a href='/'>Home</a>"
 
-    try:
-        meta = json.load(open(meta_path))
-        real_key = meta.get("key")
-    except:
-        return "<h2>❌ Meta corrupted</h2><a href='/'>Home</a>"
+    meta = json.load(open(meta_path))
+    real_key = meta.get("key")
+    entered  = request.form.get("key", "")
 
-    entered = request.form.get("key", "")
     if entered != real_key:
         return "<h2>❌ Wrong key</h2><a href='/'>Home</a>"
 
@@ -211,30 +234,28 @@ def decrypt(filename):
 
     try:
         decrypt_stream(enc_path, dec_path, parse_key(real_key))
-    except InvalidToken:
-        if os.path.exists(dec_path): os.remove(dec_path)
-        return "<h2>❌ Invalid token. File corrupted or wrong key.</h2><a href='/'>Home</a>"
     except Exception as e:
-        app.logger.error("[decrypt] " + traceback.format_exc())
-        if os.path.exists(dec_path): os.remove(dec_path)
+        if os.path.exists(dec_path):
+            os.remove(dec_path)
         return f"<h2>❌ Decrypt error: {str(e)}</h2><a href='/'>Home</a>"
 
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
+# ------------------------------------------
+# 7️⃣ SERVE FILES (Preview + Video Streaming)
+# ------------------------------------------
 @app.route("/uploads/<filename>")
 def serve_file(filename):
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
+
     if not os.path.exists(path):
         return render_template("404.html")
 
     mimetype = mimetypes.guess_type(path)[0] or "application/octet-stream"
 
-    if request.args.get("download") == "1":
-        return send_file(path, mimetype=mimetype, as_attachment=True, download_name=filename)
-
+    # video streaming
     if mimetype.startswith("video/"):
-        size = os.path.getsizeof(path)
         file_size = os.path.getsize(path)
         rng = request.headers.get("Range")
 
@@ -264,8 +285,11 @@ def serve_file(filename):
 def head_file(filename):
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
-    mimetype = mimetypes.guess_type(path)[0] or "video/mp4"
+    mimetype = mimetypes.guess_type(path)[0] or "application/octet-stream"
     return Response(headers={"Accept-Ranges": "bytes", "Content-Type": mimetype})
 
+# ------------------------------------------
+# Run
+# ------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

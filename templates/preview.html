@@ -47,6 +47,19 @@
   }
   #fileInfo { font-size: 14px; color: #333; margin-top: 10px; }
   #eta { font-weight: bold; margin-top: 10px; }
+
+  .action-btn {
+    display: none;
+    padding: 10px 25px;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    margin: 10px 5px;
+  }
+  #pauseBtn  { background:#ffaa00; }
+  #resumeBtn { background:#00b37d; }
+  #cancelBtn { background:#ff4444; }
 </style>
 </head>
 <body>
@@ -69,14 +82,29 @@
 
 <button class="btn" onclick="startUpload()">Start Upload</button>
 
-<script>
-const fileInput   = document.getElementById("fileInput");
-const fileInfo    = document.getElementById("fileInfo");
-const progress    = document.getElementById("progress");
-const progressBar = document.getElementById("progressBar");
-const etaText     = document.getElementById("eta");
+<button id="pauseBtn" class="action-btn">⏸ Pause</button>
+<button id="resumeBtn" class="action-btn">▶ Resume</button>
+<button id="cancelBtn" class="action-btn">⛔ Cancel</button>
 
-const chunkSize = 5 * 1024 * 1024; // 5MB
+<script>
+const fileInput = document.getElementById("fileInput");
+const fileInfo = document.getElementById("fileInfo");
+const progress = document.getElementById("progress");
+const progressBar = document.getElementById("progressBar");
+const etaText = document.getElementById("eta");
+
+const pauseBtn = document.getElementById("pauseBtn");
+const resumeBtn = document.getElementById("resumeBtn");
+const cancelBtn = document.getElementById("cancelBtn");
+
+let uploadCancelled = false;
+let uploadPaused = false;
+let abortController = null;
+
+let file, safeName, totalParts, fileId;
+let currentIndex = 0;
+
+const chunkSize = 5 * 1024 * 1024;
 
 fileInput.addEventListener("change", () => {
   if (fileInput.files.length) {
@@ -86,62 +114,91 @@ fileInput.addEventListener("change", () => {
   }
 });
 
-// Retry mechanism for unstable network
 async function uploadChunk(form){
   while(true){
     try {
-      const r = await fetch("/upload_chunk", { method: "POST", body: form });
-      if (r.ok) return;
-    } catch (e) {}
+      const r = await fetch("/upload_chunk", { 
+        method:"POST", 
+        body: form,
+        signal: abortController.signal
+      });
+      if(r.ok) return;
+    } catch(e){
+      if(uploadPaused || uploadCancelled) return;
+    }
     await new Promise(res => setTimeout(res, 1500));
   }
 }
 
 async function startUpload(){
-  const file = fileInput.files[0];
+  file = fileInput.files[0];
   if(!file) return alert("Select a file first!");
 
-  // Safe filename for server
-  const safeName   = file.name.replace(/[^\w.-]/g, "_");
-  const totalParts = Math.ceil(file.size / chunkSize);
-  const fileId     = Date.now().toString();
+  uploadCancelled = false;
+  uploadPaused = false;
+
+  abortController = new AbortController();
+
+  safeName = file.name.replace(/[^\w.-]/g, "_");
+  totalParts = Math.ceil(file.size / chunkSize);
+  fileId = Date.now().toString();
+  currentIndex = 0;
 
   progressBar.style.display = "block";
-  let uploaded = 0;
-  let started  = Date.now();
+  pauseBtn.style.display = "inline-block";
+  cancelBtn.style.display = "inline-block";
 
-  for (let i = 0; i < totalParts; i++){
-    let start = i * chunkSize;
+  let uploaded = 0;
+  let started = Date.now();
+
+  while (currentIndex < totalParts){
+
+    if(uploadCancelled){ resetUI(); return; }
+    if(uploadPaused){ etaText.innerHTML = "⏸ Paused…"; return; }
+
+    let start = currentIndex * chunkSize;
     let blob  = file.slice(start, start + chunkSize);
 
     let form = new FormData();
     form.append("file_id", fileId);
     form.append("filename", safeName);
-    form.append("index", i);
+    form.append("index", currentIndex);
     form.append("chunk", blob);
 
     await uploadChunk(form);
 
+    if(uploadCancelled || uploadPaused) return;
+
+    currentIndex++;
     uploaded++;
+
     let percent = Math.round((uploaded / totalParts) * 100);
     progress.style.width = percent + "%";
 
-    // ETA
     let elapsed = (Date.now() - started) / 1000;
-    let speed   = uploaded / elapsed;
-    let remain  = totalParts - uploaded;
-    let eta     = remain / speed;
+    let speed   = (uploaded * chunkSize) / (1024*1024) / elapsed;
+    speed = speed.toFixed(2);
 
-    etaText.innerHTML = `⏳ ${percent}% — Est: ${eta.toFixed(1)}s`;
+    let remainChunks = totalParts - uploaded;
+    let remainMB = (remainChunks * chunkSize) / (1024*1024);
+
+    let etaSeconds = remainMB / speed;
+    let mins = Math.floor(etaSeconds / 60);
+    let secs = Math.floor(etaSeconds % 60);
+
+    etaText.innerHTML =
+      `⏳ ${percent}% — Speed: <b>${speed} MB/s</b> — Remaining: <b>${mins}m ${secs}s</b>`;
   }
+
+  pauseBtn.style.display = "none";
+  cancelBtn.style.display = "none";
 
   etaText.innerHTML = "🔐 Encrypting & Generating QR…";
 
-  // Tell server to start background processing
   await fetch(`/finish_upload?file_id=${fileId}&filename=${encodeURIComponent(safeName)}`);
 
-  // Poll status every 2 seconds
   async function checkStatus(){
+    if(uploadCancelled) return;
     let r = await fetch(`/status/${fileId}`);
     let d = await r.json();
 
@@ -149,14 +206,48 @@ async function startUpload(){
       etaText.innerHTML = "✅ Complete! Redirecting…";
       window.location.href =
         `/success/${encodeURIComponent(d.filename)}?key=${encodeURIComponent(d.key)}`;
-    } else if (d.status === "error") {
-      etaText.innerHTML = "❌ Server error, try again!";
-    } else {
+    } 
+    else if (d.status === "error"){
+      etaText.innerHTML = "❌ Server error!";
+    }
+    else{
       setTimeout(checkStatus, 2000);
     }
   }
 
   checkStatus();
+}
+
+pauseBtn.onclick = () => {
+  uploadPaused = true;
+  pauseBtn.style.display = "none";
+  resumeBtn.style.display = "inline-block";
+
+  if(abortController) abortController.abort();
+};
+
+resumeBtn.onclick = () => {
+  uploadPaused = false;
+  resumeBtn.style.display = "none";
+  pauseBtn.style.display = "inline-block";
+
+  abortController = new AbortController();
+  startUpload();
+};
+
+cancelBtn.onclick = () => {
+  uploadCancelled = true;
+  if(abortController) abortController.abort();
+  resetUI();
+};
+
+function resetUI(){
+  progressBar.style.display = "none";
+  progress.style.width = "0%";
+  etaText.innerHTML = "";
+  pauseBtn.style.display = "none";
+  resumeBtn.style.display = "none";
+  cancelBtn.style.display = "none";
 }
 </script>
 
