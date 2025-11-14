@@ -4,12 +4,51 @@
 <meta charset="UTF-8">
 <title>QR Generated</title>
 <style>
-  body { font-family: Arial; text-align: center; background: #f9fafc; padding: 50px; }
-  .card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); display: inline-block; max-width: 520px; width: 100%; }
-  img.qr { width: 250px; height: auto; margin-top: 20px; border-radius: 8px; }
-  button.btn, a.btn { background:#2563eb;color:white;padding:10px 25px;border-radius:8px;margin-top:15px;cursor:pointer;border:none;text-decoration:none;display:inline-block }
-  .key-box { background:#e9ffe9;border:1px solid #bfefbf;border-radius:8px;padding:10px;margin-top:15px;word-break:break-all }
-  .danger { color:#e11d48;font-size:14px;margin-top:10px }
+  body { 
+    font-family: Arial; 
+    text-align: center; 
+    background: #f9fafc; 
+    padding: 50px; 
+  }
+  .card { 
+    background: white; 
+    border-radius: 15px; 
+    padding: 30px; 
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1); 
+    display: inline-block; 
+    max-width: 520px; 
+    width: 100%; 
+  }
+  img.qr { 
+    width: 250px; 
+    height: auto; 
+    margin-top: 20px; 
+    border-radius: 8px; 
+  }
+  button.btn, a.btn { 
+    background:#2563eb;
+    color:white;
+    padding:10px 25px;
+    border-radius:8px;
+    margin-top:15px;
+    cursor:pointer;
+    border:none;
+    text-decoration:none;
+    display:inline-block;
+  }
+  .key-box { 
+    background:#e9ffe9;
+    border:1px solid #bfefbf;
+    border-radius:8px;
+    padding:10px;
+    margin-top:15px;
+    word-break:break-all;
+  }
+  .danger { 
+    color:#e11d48;
+    font-size:14px;
+    margin-top:10px;
+  }
 </style>
 </head>
 <body>
@@ -17,16 +56,25 @@
 <div class="card">
   <h2>✅ QR Code & Key Generated!</h2>
 
+  <!-- QR IMAGE -->
   <img class="qr"
        src="/static/qrcodes/{{ qr_image }}?v={{ uuid }}"
        alt="QR Code">
 
+  <!-- ⭐ DOWNLOAD QR BUTTON -->
+  <a class="btn" href="/static/qrcodes/{{ qr_image }}" download="SmartQR.png">
+    Download QR
+  </a>
+
+  <!-- KEY BOX -->
   <div class="key-box" id="keyBox">
     <strong>Your Key:</strong><br>{{ key }}
   </div>
 
+  <!-- BUTTONS -->
   <button class="btn" onclick="copyKey()">Copy Key</button>
   <a class="btn" href="{{ public_link }}" target="_blank">Open File Page</a>
+  <button class="btn" onclick="shareQR()">Share</button>
 
   <p class="danger">⚠ Save this key — it won't show again.</p>
 
@@ -39,18 +87,52 @@
 
 <script>
 function copyKey(){
-  const text = document.getElementById("keyBox").innerText.replace("Your Key:", "").trim();
+  const text = document.getElementById("keyBox")
+        .innerText.replace("Your Key:", "").trim();
   navigator.clipboard.writeText(text);
   alert("Key copied!");
 }
 
+// 📤 SHARE FUNCTION
+async function shareQR() {
+
+    const shareData = {
+        title: "SmartQR File",
+        text: "Here is your encrypted file link and key:\n\n" +
+              "🔗 Link: {{ public_link }}\n" +
+              "🔑 Key: {{ key }}",
+        url: "{{ public_link }}"
+    };
+
+    try {
+        const qrUrl = "/static/qrcodes/{{ qr_image }}";
+        const response = await fetch(qrUrl);
+        const blob = await response.blob();
+        const file = new File([blob], "SmartQR.png", { type: "image/png" });
+        shareData.files = [file];
+    } catch (e) {
+        console.log("Image sharing unavailable", e);
+    }
+
+    if (navigator.share) {
+        navigator.share(shareData).catch(()=>{});
+    } else {
+        alert("Sharing not supported on this device.");
+    }
+}
+
 {% if expires_in is not none %}
-let t={{ expires_in }};
+let t = {{ expires_in }};
 function timer(){
-  const el=document.getElementById("count");
-  if(t<=0){ el.innerText="Expired"; return; }
-  const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
-  el.innerText=`${h}h ${m}m ${s}s`;
+  const el = document.getElementById("count");
+  if(t <= 0){
+    el.innerText = "Expired";
+    return;
+  }
+  const h = Math.floor(t/3600);
+  const m = Math.floor((t%3600)/60);
+  const s = t % 60;
+  el.innerText = `${h}h ${m}m ${s}s`;
   t--;
 }
 timer();
