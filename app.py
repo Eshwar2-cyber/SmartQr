@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file, jsonify, Response
+from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
 import os, qrcode, time, shutil, json, uuid, mimetypes, traceback
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet, InvalidToken
@@ -40,7 +40,6 @@ def encrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
             fout.write(len(token).to_bytes(4, "big"))
             fout.write(token)
 
-# ✅ SAFE FOR 500MB+ DECRYPT
 def decrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
     f = Fernet(key)
     with open(src_path, "rb") as fin, open(dst_path, "wb") as fout:
@@ -51,7 +50,6 @@ def decrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
 
             size = int.from_bytes(size_bytes, "big")
 
-            # read encrypted token in small chunks (max 1MB each)
             remaining = size
             token_parts = []
             while remaining > 0:
@@ -221,51 +219,97 @@ def decrypt(filename):
 
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
-@app.route("/uploads/<filename>")
+# ---------- Helper: stream a byte range ----------
+def stream_file_range(path, start, end):
+    length = end - start + 1
+    def generator():
+        with open(path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            chunk_size = 64 * 1024
+            while remaining > 0:
+                read_size = min(chunk_size, remaining)
+                data = f.read(read_size)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+    return generator()
+
+# ------------------------------------------
+# 7️⃣ SERVE FILES (Preview + Robust Range Streaming)
+# ------------------------------------------
+@app.route("/uploads/<path:filename>")
 def serve_file(filename):
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
     if not os.path.exists(path):
         return render_template("404.html")
 
-    mimetype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    # force a safe binary MIME default
+    guessed = mimetypes.guess_type(path)[0]
+    mimetype = guessed or "application/octet-stream"
 
-    if request.args.get("download") == "1":
-        return send_file(path, mimetype=mimetype, as_attachment=True, download_name=filename)
+    file_size = os.path.getsize(path)
+    range_header = request.headers.get('Range', None)
+    download_param = request.args.get("download") == "1"
 
-    if mimetype.startswith("video/"):
-        size = os.path.getsizeof(path)
-        file_size = os.path.getsize(path)
-        rng = request.headers.get("Range")
+    # If client requested a byte range, serve partial content (works for all types)
+    if range_header:
+        # Parse range: expecting "bytes=start-end"
+        try:
+            range_value = range_header.strip().split('=')[1]
+            start_str, end_str = range_value.split('-')
+            start = int(start_str) if start_str else 0
+            end = int(end_str) if end_str else file_size - 1
+            if end >= file_size:
+                end = file_size - 1
+            if start > end:
+                return Response(status=416)
+        except Exception:
+            # Bad Range header
+            return Response(status=416)
 
-        if rng:
-            a, b = rng.replace("bytes=", "").split("-")
-            start = int(a) if a else 0
-            end = file_size - 1 if not b else int(b)
-            length = end - start + 1
+        length = end - start + 1
+        generator = stream_file_range(path, start, end)
 
-            with open(path, "rb") as f:
-                f.seek(start)
-                data = f.read(length)
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(length),
+            "Content-Type": mimetype,
+            "Content-Encoding": "identity"
+        }
+        return Response(stream_with_context(generator), status=206, headers=headers, mimetype=mimetype)
 
-            return Response(data, 206, mimetype=mimetype, headers={
-                "Content-Range": f"bytes {start}-{end}/{file_size}",
-                "Accept-Ranges": "bytes",
-                "Content-Length": str(length)
-            })
+    # No Range header: either stream whole file or send as attachment based on request
+    # If user explicitly asked for download, send as attachment; otherwise for common previewable types allow inline.
+    inline_types = ("text/", "image/", "application/pdf", "audio/", "video/")
+    as_attachment = download_param or not any(mimetype.startswith(p) for p in inline_types)
 
-        return Response(open(path, "rb").read(),
-                        mimetype=mimetype,
-                        headers={"Content-Length": str(file_size), "Accept-Ranges": "bytes"})
-
-    return send_file(path, mimetype=mimetype, as_attachment=False, download_name=filename)
+    # Use send_file for simple full response but ensure correct headers for binary safety
+    response = send_file(path, mimetype=mimetype, as_attachment=as_attachment, download_name=filename)
+    # Ensure these headers exist to prevent browser from modifying bytes
+    response.headers["Accept-Ranges"] = "bytes"
+    response.headers["Content-Encoding"] = "identity"
+    # Content-Length is already set by send_file / WSGI, but ensure present
+    response.headers["Content-Length"] = str(file_size)
+    return response
 
 @app.route("/uploads/<filename>", methods=["HEAD"])
 def head_file(filename):
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
-    mimetype = mimetypes.guess_type(path)[0] or "video/mp4"
-    return Response(headers={"Accept-Ranges": "bytes", "Content-Type": mimetype})
+    if not os.path.exists(path):
+        return Response(status=404)
 
+    guessed = mimetypes.guess_type(path)[0]
+    mimetype = guessed or "application/octet-stream"
+    headers = {"Accept-Ranges": "bytes", "Content-Type": mimetype}
+    return Response(headers=headers)
+
+# ------------------------------------------
+# Run
+# ------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
