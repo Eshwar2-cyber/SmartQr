@@ -1,5 +1,5 @@
-from flask import Flask, render_template, request, send_file, jsonify, Response, stream_with_context
-import os, qrcode, time, shutil, json, uuid, mimetypes, traceback, hashlib
+from flask import Flask, render_template, request, send_file, jsonify, Response
+import os, qrcode, time, shutil, json, uuid, mimetypes, traceback
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet, InvalidToken
 from threading import Thread
@@ -40,6 +40,7 @@ def encrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
             fout.write(len(token).to_bytes(4, "big"))
             fout.write(token)
 
+# ✅ SAFE FOR 500MB+ DECRYPT
 def decrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
     f = Fernet(key)
     with open(src_path, "rb") as fin, open(dst_path, "wb") as fout:
@@ -49,9 +50,10 @@ def decrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
                 break
 
             size = int.from_bytes(size_bytes, "big")
+
+            # read encrypted token in small chunks (max 1MB each)
             remaining = size
             token_parts = []
-
             while remaining > 0:
                 part = fin.read(min(1024 * 1024, remaining))
                 if not part:
@@ -98,9 +100,9 @@ def process_file(file_id: str, filename: str) -> None:
 
         tasks[file_id] = {"status": "done", "key": key, "filename": filename}
 
-    except Exception:
+    except Exception as e:
         app.logger.error("[process_file] " + traceback.format_exc())
-        tasks[file_id] = {"status": "error", "filename": filename}
+        tasks[file_id] = {"status": "error", "error": str(e), "filename": filename}
 
 # ---------- Routes ----------
 @app.route("/")
@@ -150,13 +152,20 @@ def success(filename):
     if not key:
         meta_path = os.path.join(ENCRYPT, filename + ".meta")
         if os.path.exists(meta_path):
-            key = json.load(open(meta_path)).get("key")
+            try:
+                key = json.load(open(meta_path)).get("key")
+            except:
+                key = None
 
+    # expiration (24 hrs)
     expires = None
     meta = os.path.join(ENCRYPT, filename + ".meta")
     if os.path.exists(meta):
-        data = json.load(open(meta))
-        expires = max(0, int((data["time"] + 86400) - time.time()))
+        try:
+            data = json.load(open(meta))
+            expires = max(0, int((data["time"] + 86400) - time.time()))
+        except:
+            expires = None
 
     return render_template("success.html",
                            filename=filename,
@@ -181,236 +190,82 @@ def unlock(filename):
 def decrypt(filename):
     filename = secure_filename(filename)
     enc_path = os.path.join(ENCRYPT, filename)
-
     if not os.path.exists(enc_path):
-        return "<h2>❌ Encrypted file missing</h2>"
+        return "<h2>❌ Encrypted file missing</h2><a href='/'>Home</a>"
 
     meta_path = enc_path + ".meta"
     if not os.path.exists(meta_path):
-        return "<h2>❌ Meta missing. Re-upload.</h2>"
+        return "<h2>❌ Meta missing. Re-upload the file.</h2><a href='/'>Home</a>"
 
-    meta = json.load(open(meta_path))
-    real_key = meta.get("key")
+    try:
+        meta = json.load(open(meta_path))
+        real_key = meta.get("key")
+    except:
+        return "<h2>❌ Meta corrupted</h2><a href='/'>Home</a>"
 
     entered = request.form.get("key", "")
     if entered != real_key:
-        return "<h2>❌ Wrong key</h2>"
+        return "<h2>❌ Wrong key</h2><a href='/'>Home</a>"
 
     dec_path = os.path.join(UPLOAD, filename)
 
     try:
         decrypt_stream(enc_path, dec_path, parse_key(real_key))
-    except Exception:
+    except InvalidToken:
         if os.path.exists(dec_path): os.remove(dec_path)
-        return "<h2>❌ File corrupted or wrong key</h2>"
+        return "<h2>❌ Invalid token. File corrupted or wrong key.</h2><a href='/'>Home</a>"
+    except Exception as e:
+        app.logger.error("[decrypt] " + traceback.format_exc())
+        if os.path.exists(dec_path): os.remove(dec_path)
+        return f"<h2>❌ Decrypt error: {str(e)}</h2><a href='/'>Home</a>"
 
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
 
-# ---------- Range Helper ----------
-def stream_file_range(path, start, end):
-    length = end - start + 1
-    def generator():
-        with open(path, "rb") as f:
-            f.seek(start)
-            remaining = length
-            while remaining > 0:
-                chunk = f.read(min(64 * 1024, remaining))
-                if not chunk:
-                    break
-                remaining -= len(chunk)
-                yield chunk
-    return generator()
-
-# ---------- FILE SERVER ----------
-@app.route("/uploads/<path:filename>")
+@app.route("/uploads/<filename>")
 def serve_file(filename):
-    # Serve decrypted uploads (or allow download) — support ranges for all files
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
-
     if not os.path.exists(path):
         return render_template("404.html")
 
     mimetype = mimetypes.guess_type(path)[0] or "application/octet-stream"
-    file_size = os.path.getsize(path)
-    range_header = request.headers.get("Range")
-    download = request.args.get("download") == "1"
 
-    # Range handling (works for all files)
-    if range_header:
-        try:
-            bytes_range = range_header.split("=")[1]
-            start, end = bytes_range.split("-")
-            start = int(start) if start else 0
-            end = int(end) if end else file_size - 1
-            if end >= file_size:
-                end = file_size - 1
-        except Exception:
-            return Response(status=416)
+    if request.args.get("download") == "1":
+        return send_file(path, mimetype=mimetype, as_attachment=True, download_name=filename)
 
-        generator = stream_file_range(path, start, end)
-        headers = {
-            "Content-Range": f"bytes {start}-{end}/{file_size}",
-            "Content-Length": str(end - start + 1),
-            "Accept-Ranges": "bytes",
-            "Content-Encoding": "identity",
-            "Cache-Control": "no-transform",
-            "Content-Type": mimetype
-        }
-        return Response(stream_with_context(generator), status=206, headers=headers)
+    if mimetype.startswith("video/"):
+        size = os.path.getsizeof(path)
+        file_size = os.path.getsize(path)
+        rng = request.headers.get("Range")
 
-    # No range: serve full file, attach if requested or not previewable
-    inline_types = ("text/", "image/", "application/pdf", "audio/", "video/")
-    as_attachment = download or not any(mimetype.startswith(p) for p in inline_types)
+        if rng:
+            a, b = rng.replace("bytes=", "").split("-")
+            start = int(a) if a else 0
+            end = file_size - 1 if not b else int(b)
+            length = end - start + 1
 
-    response = send_file(
-        path,
-        mimetype=mimetype,
-        as_attachment=as_attachment,
-        download_name=filename
-    )
-    response.headers["Accept-Ranges"] = "bytes"
-    response.headers["Content-Encoding"] = "identity"
-    response.headers["Cache-Control"] = "no-transform"
-    response.headers["Content-Length"] = str(file_size)
-    return response
+            with open(path, "rb") as f:
+                f.seek(start)
+                data = f.read(length)
 
-# ---------- ENCRYPTED FILE DOWNLOAD (FORCE ATTACHMENT) ----------
-@app.route("/encrypted/<path:filename>")
-def download_encrypted(filename):
-    """
-    Direct link for the encrypted file stored in /encrypted.
-    This always forces download as binary attachment and sets no-transform.
-    Use this when sharing the encrypted file to other devices.
-    """
-    filename = secure_filename(filename)
-    path = os.path.join(ENCRYPT, filename)
-    if not os.path.exists(path):
-        return render_template("404.html")
+            return Response(data, 206, mimetype=mimetype, headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(length)
+            })
 
-    mimetype = "application/octet-stream"
-    file_size = os.path.getsize(path)
+        return Response(open(path, "rb").read(),
+                        mimetype=mimetype,
+                        headers={"Content-Length": str(file_size), "Accept-Ranges": "bytes"})
 
-    response = send_file(
-        path,
-        mimetype=mimetype,
-        as_attachment=True,
-        download_name=filename
-    )
-    response.headers["Accept-Ranges"] = "bytes"
-    response.headers["Content-Encoding"] = "identity"
-    response.headers["Cache-Control"] = "no-transform, no-cache"
-    response.headers["Content-Length"] = str(file_size)
-    return response
+    return send_file(path, mimetype=mimetype, as_attachment=False, download_name=filename)
 
 @app.route("/uploads/<filename>", methods=["HEAD"])
 def head_file(filename):
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
-    if not os.path.exists(path):
-        return Response(status=404)
+    mimetype = mimetypes.guess_type(path)[0] or "video/mp4"
+    return Response(headers={"Accept-Ranges": "bytes", "Content-Type": mimetype})
 
-    guessed = mimetypes.guess_type(path)[0] or "application/octet-stream"
-    return Response(headers={"Accept-Ranges": "bytes", "Content-Type": guessed, "Cache-Control": "no-transform"})
-
-# ---------- Diagnostics ----------
-@app.route("/file_hash/<filename>")
-def file_hash(filename):
-    filename = secure_filename(filename)
-    path = os.path.join(ENCRYPT, filename)
-    if not os.path.exists(path):
-        return jsonify({"ok": False, "error": "file-not-found"}), 404
-
-    h = hashlib.sha256()
-    size = 0
-
-    with open(path, "rb") as f:
-        while True:
-            c = f.read(1024 * 1024)
-            if not c:
-                break
-            h.update(c)
-            size += len(c)
-
-    return jsonify({"ok": True, "size": size, "sha256": h.hexdigest()})
-
-@app.route("/check_key", methods=["POST"])
-def check_key():
-    data = request.get_json(force=True)
-    filename = secure_filename(data.get("filename"))
-    key = data.get("key")
-
-    path = os.path.join(ENCRYPT, filename)
-    if not os.path.exists(path):
-        return jsonify({"ok": False, "error": "file-not-found"}), 404
-
-    try:
-        with open(path, "rb") as f:
-            size_bytes = f.read(4)
-            if not size_bytes or len(size_bytes) < 4:
-                return jsonify({"ok": False, "error": "file-too-short"}), 400
-            size = int.from_bytes(size_bytes, "big")
-            token = f.read(size)
-            if len(token) != size:
-                return jsonify({"ok": False, "error": "first-token-truncated"}), 400
-
-        try:
-            Fernet(key.encode()).decrypt(token)
-            return jsonify({"ok": True, "valid": True})
-        except Exception:
-            return jsonify({"ok": True, "valid": False}), 200
-
-    except Exception:
-        app.logger.error("[check_key] " + traceback.format_exc())
-        return jsonify({"ok": False, "error": "internal-error"}), 500
-
-@app.route("/meta/<filename>")
-def meta(filename):
-    filename = secure_filename(filename)
-    p = os.path.join(ENCRYPT, filename + ".meta")
-    if not os.path.exists(p):
-        return jsonify({"ok": False, "error": "meta-not-found"}), 404
-
-    try:
-        return jsonify({"ok": True, "meta": json.load(open(p))})
-    except Exception:
-        return jsonify({"ok": False, "error": "meta-read-failed"}), 500
-
-@app.route("/compare_upload", methods=["POST"])
-def compare_upload():
-    uploaded = request.files.get("file")
-    fname = secure_filename(request.form.get("filename"))
-    server_path = os.path.join(ENCRYPT, fname)
-
-    if not os.path.exists(server_path):
-        return jsonify({"ok": False, "error": "server-file-not-found"}), 404
-
-    h_up = hashlib.sha256()
-    uploaded.stream.seek(0)
-    up_size = 0
-    while True:
-        c = uploaded.stream.read(1024 * 1024)
-        if not c:
-            break
-        h_up.update(c)
-        up_size += len(c)
-
-    h_srv = hashlib.sha256()
-    srv_size = 0
-    with open(server_path, "rb") as f:
-        while True:
-            c = f.read(1024 * 1024)
-            if not c:
-                break
-            h_srv.update(c)
-            srv_size += len(c)
-
-    return jsonify({
-        "uploaded": {"size": up_size, "sha256": h_up.hexdigest()},
-        "server": {"size": srv_size, "sha256": h_srv.hexdigest()},
-        "match": h_up.hexdigest() == h_srv.hexdigest()
-    })
-
-# ---------- Run ----------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

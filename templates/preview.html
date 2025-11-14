@@ -82,7 +82,7 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files.length) {
     let f = fileInput.files[0];
     fileInfo.innerHTML =
-      `✅ Selected: <b>${f.name}</b><br>📦 ${(f.size / 1024 / 1024).toFixed(2)} MB`;
+      `✅ Selected: <b>${f.name}</b><br>📦 ${(f.size/1024/1024).toFixed(2)} MB`;
   }
 });
 
@@ -101,6 +101,7 @@ async function startUpload(){
   const file = fileInput.files[0];
   if(!file) return alert("Select a file first!");
 
+  // Safe filename for server
   const safeName   = file.name.replace(/[^\w.-]/g, "_");
   const totalParts = Math.ceil(file.size / chunkSize);
   const fileId     = Date.now().toString();
@@ -125,25 +126,21 @@ async function startUpload(){
     let percent = Math.round((uploaded / totalParts) * 100);
     progress.style.width = percent + "%";
 
-    // ETA + speed
+    // ETA
     let elapsed = (Date.now() - started) / 1000;
-    let speed   = (uploaded * chunkSize) / (1024*1024) / elapsed;
-    speed = speed.toFixed(2);
+    let speed   = uploaded / elapsed;
+    let remain  = totalParts - uploaded;
+    let eta     = remain / speed;
 
-    let remainChunks = totalParts - uploaded;
-    let remainMB = (remainChunks * chunkSize) / (1024*1024);
-
-    let etaSeconds = remainMB / speed;
-    let mins = Math.floor(etaSeconds / 60);
-    let secs = Math.floor(etaSeconds % 60);
-
-    etaText.innerHTML = `⏳ ${percent}% — Speed: ${speed} MB/s — Remaining: ${mins}m ${secs}s`;
+    etaText.innerHTML = `⏳ ${percent}% — Est: ${eta.toFixed(1)}s`;
   }
 
   etaText.innerHTML = "🔐 Encrypting & Generating QR…";
 
+  // Tell server to start background processing
   await fetch(`/finish_upload?file_id=${fileId}&filename=${encodeURIComponent(safeName)}`);
 
+  // Poll status every 2 seconds
   async function checkStatus(){
     let r = await fetch(`/status/${fileId}`);
     let d = await r.json();
@@ -152,11 +149,9 @@ async function startUpload(){
       etaText.innerHTML = "✅ Complete! Redirecting…";
       window.location.href =
         `/success/${encodeURIComponent(d.filename)}?key=${encodeURIComponent(d.key)}`;
-    } 
-    else if(d.status === "error"){
-      etaText.innerHTML = "❌ Server error";
-    }
-    else{
+    } else if (d.status === "error") {
+      etaText.innerHTML = "❌ Server error, try again!";
+    } else {
       setTimeout(checkStatus, 2000);
     }
   }
