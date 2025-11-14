@@ -3,26 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <title>Unlock File</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
 <style>
   body {
     font-family: Arial;
     text-align: center;
     background: #f9fafc;
-    padding: 60px;
+    padding: 60px 15px;
   }
   .card {
     background: white;
     padding: 35px;
     border-radius: 14px;
-    display: inline-block;
+    max-width: 360px;
+    width: 100%;
+    margin: auto;
     box-shadow: 0 6px 20px rgba(0,0,0,.1);
   }
   input, button {
     padding: 12px;
     margin-top: 10px;
-    width: 260px;
+    width: 100%;
     border-radius: 8px;
     border: 1px solid #bbb;
+    font-size: 16px;
   }
   button {
     background: #2563eb;
@@ -33,17 +38,34 @@
   button:hover {
     background: #1d4ed8;
   }
+  .home {
+    display:block;
+    margin-top:15px;
+    font-size: 16px;
+  }
 </style>
+
 </head>
 <body>
+
 <div class="card">
   <h2>🔐 Enter Key</h2>
+
   <form method="POST" action="/decrypt/{{ filename }}">
-    <input type="text" name="key" placeholder="Enter key" required><br>
+    <input type="text" 
+           name="key" 
+           placeholder="Enter key" 
+           required
+           autocomplete="off"
+           autocorrect="off"
+           autocapitalize="none"
+           spellcheck="false">
+           
     <button type="submit">Unlock</button>
   </form>
 
-  <a href="/" style="display:block;margin-top:10px">🏠 Home</a>
+  <a href="/" class="home">🏠 Home</a>
 </div>
+
 </body>
 </html>

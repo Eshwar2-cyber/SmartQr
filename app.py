@@ -40,7 +40,7 @@ def encrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
             fout.write(len(token).to_bytes(4, "big"))
             fout.write(token)
 
-# ✅ SAFE FOR 500MB+ DECRYPT
+# ---------- DECRYPT (SAFE FOR 500MB+) ----------
 def decrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
     f = Fernet(key)
     with open(src_path, "rb") as fin, open(dst_path, "wb") as fout:
@@ -51,7 +51,6 @@ def decrypt_stream(src_path: str, dst_path: str, key: bytes) -> None:
 
             size = int.from_bytes(size_bytes, "big")
 
-            # read encrypted token in small chunks (max 1MB each)
             remaining = size
             token_parts = []
             while remaining > 0:
@@ -100,9 +99,9 @@ def process_file(file_id: str, filename: str) -> None:
 
         tasks[file_id] = {"status": "done", "key": key, "filename": filename}
 
-    except Exception as e:
+    except Exception:
         app.logger.error("[process_file] " + traceback.format_exc())
-        tasks[file_id] = {"status": "error", "error": str(e), "filename": filename}
+        tasks[file_id] = {"status": "error", "error": "Processing failed", "filename": filename}
 
 # ---------- Routes ----------
 @app.route("/")
@@ -157,7 +156,7 @@ def success(filename):
             except:
                 key = None
 
-    # expiration (24 hrs)
+    # EXPIRATION (24 hours)
     expires = None
     meta = os.path.join(ENCRYPT, filename + ".meta")
     if os.path.exists(meta):
@@ -186,10 +185,15 @@ def view(filename):
 def unlock(filename):
     return render_template("unlock.html", filename=secure_filename(filename))
 
+
+# ---------------------------------------------------------------------------
+# --------------------------- UPDATED DECRYPT() ------------------------------
+# ---------------------------------------------------------------------------
 @app.route("/decrypt/<filename>", methods=["POST"])
 def decrypt(filename):
     filename = secure_filename(filename)
     enc_path = os.path.join(ENCRYPT, filename)
+
     if not os.path.exists(enc_path):
         return "<h2>❌ Encrypted file missing</h2><a href='/'>Home</a>"
 
@@ -204,6 +208,8 @@ def decrypt(filename):
         return "<h2>❌ Meta corrupted</h2><a href='/'>Home</a>"
 
     entered = request.form.get("key", "")
+
+    # EXACT comparison (no trim added)
     if entered != real_key:
         return "<h2>❌ Wrong key</h2><a href='/'>Home</a>"
 
@@ -213,13 +219,14 @@ def decrypt(filename):
         decrypt_stream(enc_path, dec_path, parse_key(real_key))
     except InvalidToken:
         if os.path.exists(dec_path): os.remove(dec_path)
-        return "<h2>❌ Invalid token. File corrupted or wrong key.</h2><a href='/'>Home</a>"
+        return "<h2>❌ Invalid token. Wrong key or corrupted file.</h2><a href='/'>Home</a>"
     except Exception as e:
-        app.logger.error("[decrypt] " + traceback.format_exc())
         if os.path.exists(dec_path): os.remove(dec_path)
         return f"<h2>❌ Decrypt error: {str(e)}</h2><a href='/'>Home</a>"
 
     return render_template("decrypted_success.html", link=f"/uploads/{filename}")
+
+# ---------------------------------------------------------------------------
 
 @app.route("/uploads/<filename>")
 def serve_file(filename):
@@ -234,7 +241,6 @@ def serve_file(filename):
         return send_file(path, mimetype=mimetype, as_attachment=True, download_name=filename)
 
     if mimetype.startswith("video/"):
-        size = os.path.getsizeof(path)
         file_size = os.path.getsize(path)
         rng = request.headers.get("Range")
 
