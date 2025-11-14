@@ -224,6 +224,7 @@ def stream_file_range(path, start, end):
 # ---------- FILE SERVER ----------
 @app.route("/uploads/<path:filename>")
 def serve_file(filename):
+    # Serve decrypted uploads (or allow download) — support ranges for all files
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
 
@@ -235,49 +236,82 @@ def serve_file(filename):
     range_header = request.headers.get("Range")
     download = request.args.get("download") == "1"
 
-    # Handle Range Request
+    # Range handling (works for all files)
     if range_header:
-        bytes_range = range_header.split("=")[1]
-        start, end = bytes_range.split("-")
-        start = int(start) if start else 0
-        end = int(end) if end else file_size - 1
-        if end >= file_size:
-            end = file_size - 1
+        try:
+            bytes_range = range_header.split("=")[1]
+            start, end = bytes_range.split("-")
+            start = int(start) if start else 0
+            end = int(end) if end else file_size - 1
+            if end >= file_size:
+                end = file_size - 1
+        except Exception:
+            return Response(status=416)
 
         generator = stream_file_range(path, start, end)
-
         headers = {
             "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Content-Length": str(end - start + 1),
             "Accept-Ranges": "bytes",
             "Content-Encoding": "identity",
+            "Cache-Control": "no-transform",
             "Content-Type": mimetype
         }
         return Response(stream_with_context(generator), status=206, headers=headers)
 
+    # No range: serve full file, attach if requested or not previewable
+    inline_types = ("text/", "image/", "application/pdf", "audio/", "video/")
+    as_attachment = download or not any(mimetype.startswith(p) for p in inline_types)
+
     response = send_file(
         path,
         mimetype=mimetype,
-        as_attachment=True if download else False,
+        as_attachment=as_attachment,
         download_name=filename
     )
-
     response.headers["Accept-Ranges"] = "bytes"
     response.headers["Content-Encoding"] = "identity"
+    response.headers["Cache-Control"] = "no-transform"
+    response.headers["Content-Length"] = str(file_size)
+    return response
+
+# ---------- ENCRYPTED FILE DOWNLOAD (FORCE ATTACHMENT) ----------
+@app.route("/encrypted/<path:filename>")
+def download_encrypted(filename):
+    """
+    Direct link for the encrypted file stored in /encrypted.
+    This always forces download as binary attachment and sets no-transform.
+    Use this when sharing the encrypted file to other devices.
+    """
+    filename = secure_filename(filename)
+    path = os.path.join(ENCRYPT, filename)
+    if not os.path.exists(path):
+        return render_template("404.html")
+
+    mimetype = "application/octet-stream"
+    file_size = os.path.getsize(path)
+
+    response = send_file(
+        path,
+        mimetype=mimetype,
+        as_attachment=True,
+        download_name=filename
+    )
+    response.headers["Accept-Ranges"] = "bytes"
+    response.headers["Content-Encoding"] = "identity"
+    response.headers["Cache-Control"] = "no-transform, no-cache"
     response.headers["Content-Length"] = str(file_size)
     return response
 
 @app.route("/uploads/<filename>", methods=["HEAD"])
-def head(filename):
+def head_file(filename):
     filename = secure_filename(filename)
     path = os.path.join(UPLOAD, filename)
     if not os.path.exists(path):
         return Response(status=404)
 
-    return Response(headers={
-        "Accept-Ranges": "bytes",
-        "Content-Type": "application/octet-stream"
-    })
+    guessed = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    return Response(headers={"Accept-Ranges": "bytes", "Content-Type": guessed, "Cache-Control": "no-transform"})
 
 # ---------- Diagnostics ----------
 @app.route("/file_hash/<filename>")
@@ -313,14 +347,22 @@ def check_key():
     try:
         with open(path, "rb") as f:
             size_bytes = f.read(4)
+            if not size_bytes or len(size_bytes) < 4:
+                return jsonify({"ok": False, "error": "file-too-short"}), 400
             size = int.from_bytes(size_bytes, "big")
             token = f.read(size)
+            if len(token) != size:
+                return jsonify({"ok": False, "error": "first-token-truncated"}), 400
 
-        Fernet(key.encode()).decrypt(token)
-        return jsonify({"ok": True, "valid": True})
+        try:
+            Fernet(key.encode()).decrypt(token)
+            return jsonify({"ok": True, "valid": True})
+        except Exception:
+            return jsonify({"ok": True, "valid": False}), 200
 
     except Exception:
-        return jsonify({"ok": True, "valid": False})
+        app.logger.error("[check_key] " + traceback.format_exc())
+        return jsonify({"ok": False, "error": "internal-error"}), 500
 
 @app.route("/meta/<filename>")
 def meta(filename):
@@ -329,7 +371,10 @@ def meta(filename):
     if not os.path.exists(p):
         return jsonify({"ok": False, "error": "meta-not-found"}), 404
 
-    return jsonify({"ok": True, "meta": json.load(open(p))})
+    try:
+        return jsonify({"ok": True, "meta": json.load(open(p))})
+    except Exception:
+        return jsonify({"ok": False, "error": "meta-read-failed"}), 500
 
 @app.route("/compare_upload", methods=["POST"])
 def compare_upload():
